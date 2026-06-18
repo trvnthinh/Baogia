@@ -494,99 +494,126 @@ function calcItems(items, quoteVatRate) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHẦN 6 – LƯU TRỮ DỮ LIỆU (localStorage)
+// PHẦN 6 – LƯU TRỮ DỮ LIỆU (Google Sheets qua Apps Script API)
 // ═══════════════════════════════════════════════════════════════════════════════
-// Chiến lược lưu trữ:
-//   • Dữ liệu (quotes, products, customers, contracts) lưu vào localStorage
-//     → tự động khôi phục mỗi lần mở tab, không cần chọn file
-//   • Mỗi khi có thay đổi, _scheduleSave() debounce 800ms rồi ghi localStorage
-//   • Nút "📤 Xuất JSON" → tải file .json về máy để backup
-//   • Nút "📂 Nhập JSON" → chọn file .json để restore / chuyển máy
+// Luồng:
+//   • Khi mở app → doLoad() → GET GAS_URL?action=load&secret=xxx → nạp vào _mem
+//   • Khi có thay đổi → _scheduleSave() debounce 1.5s → POST lên GAS → ghi Sheet
+//   • localStorage dùng làm cache offline: nếu GAS lỗi vẫn còn dữ liệu cũ
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Keys localStorage ─────────────────────────────────────────────────────────
+// ── CẤU HÌNH – điền URL sau khi deploy GAS ───────────────────────────────────
+const GAS_URL    = "https://script.google.com/macros/s/AKfycbxXiDEMNqsvSKeTLT5wLT8SvRD2mfOfZT99VtQ_TuH1OpNGhukuKcVDwbVgCrYkYrdbSA/exec";   // URL từ GAS Deploy → Web App
+const API_SECRET = "PMC@2025!secret";      // Phải khớp với API_SECRET trong Code.gs
+const APP_PASSWORD = "pmc2025";            // Mật khẩu đăng nhập trang web (tự đặt)
+
+// ── Cache keys (localStorage – backup offline) ────────────────────────────────
 const LS_QUOTES    = "pmc_quotes_v4";
 const LS_PRODUCTS  = "pmc_products_v4";
 const LS_CUSTOMERS = "pmc_customers_v4";
 const LS_CONTRACTS = "pmc_contracts_v4";
-
-// ── Debounce save ─────────────────────────────────────────────────────────────
-let _saveTimer = null;
-const SAVE_DELAY = 600; // ms
-
-function _scheduleSave() {
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(_flushAll, SAVE_DELAY);
-}
-
-function _flushAll() {
-  try {
-    localStorage.setItem(LS_QUOTES,    JSON.stringify(_mem.quotes    ?? []));
-    localStorage.setItem(LS_PRODUCTS,  JSON.stringify(_mem.products));
-    localStorage.setItem(LS_CUSTOMERS, JSON.stringify(_mem.customers));
-    localStorage.setItem(LS_CONTRACTS, JSON.stringify(_mem.contracts));
-  } catch(e) {
-    // localStorage đầy (>5MB) → cảnh báo user
-    if (e.name === "QuotaExceededError") {
-      showToast("⚠️ Bộ nhớ trình duyệt gần đầy! Hãy xuất JSON để backup rồi xóa bớt dữ liệu.", 6000);
-    }
-  }
-}
+const LS_AUTHED    = "pmc_authed";         // phiên đăng nhập
 
 // ── In-memory store ───────────────────────────────────────────────────────────
-// Đây là source of truth trong suốt phiên làm việc.
-// Khi app khởi động, _mem được nạp từ localStorage một lần duy nhất.
 const _mem = {
-  quotes:    null,  // null = chưa load
+  quotes:    null,
   products:  [],
   customers: [],
   contracts: {},
 };
 
-// ── Khởi tạo: đọc toàn bộ từ localStorage ────────────────────────────────────
+// ── Debounce save ─────────────────────────────────────────────────────────────
+let _saveTimer = null;
+const SAVE_DELAY = 1500; // ms – hơi lâu hơn vì gọi network
+
+function _scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_flushToGAS, SAVE_DELAY);
+}
+
+// ── Ghi lên Google Sheets (qua GAS) ──────────────────────────────────────────
+async function _flushToGAS() {
+  if (!GAS_URL || GAS_URL === "PASTE_GAS_URL_HERE") {
+    _flushToLocalStorage(); // fallback nếu chưa cấu hình GAS
+    return;
+  }
+  try {
+    const resp = await fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        secret: API_SECRET,
+        action: "save_all",
+        payload: {
+          quotes:    _mem.quotes    ?? [],
+          products:  _mem.products,
+          customers: _mem.customers,
+          contracts: _mem.contracts,
+        }
+      }),
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error);
+    // Cập nhật cache local sau khi save thành công
+    _flushToLocalStorage();
+    showToast("💾 Đã lưu lên Google Sheets", 1500);
+  } catch(e) {
+    console.error("GAS save error:", e);
+    _flushToLocalStorage(); // vẫn lưu local dù GAS lỗi
+    showToast("⚠️ Lưu offline (GAS không phản hồi)", 3000);
+  }
+}
+
+// ── Ghi vào localStorage (cache) ─────────────────────────────────────────────
+function _flushToLocalStorage() {
+  try {
+    localStorage.setItem(LS_QUOTES,    JSON.stringify(_mem.quotes    ?? []));
+    localStorage.setItem(LS_PRODUCTS,  JSON.stringify(_mem.products));
+    localStorage.setItem(LS_CUSTOMERS, JSON.stringify(_mem.customers));
+    localStorage.setItem(LS_CONTRACTS, JSON.stringify(_mem.contracts));
+  } catch(e) { console.warn("localStorage full:", e); }
+}
+
+// ── Load dữ liệu từ GAS (ưu tiên), fallback localStorage ─────────────────────
+async function doLoad() {
+  // Thử load từ GAS trước
+  if (GAS_URL && GAS_URL !== "PASTE_GAS_URL_HERE") {
+    try {
+      const url = `${GAS_URL}?action=load&secret=${encodeURIComponent(API_SECRET)}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.ok) {
+        _mem.quotes    = Array.isArray(data.quotes)    ? data.quotes    : [];
+        _mem.products  = Array.isArray(data.products)  ? data.products  : [];
+        _mem.customers = Array.isArray(data.customers) ? data.customers : [];
+        _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
+        _flushToLocalStorage(); // cập nhật cache
+        return _mem.quotes;
+      }
+    } catch(e) {
+      console.warn("GAS load failed, dùng cache:", e);
+      showToast("⚠️ Không kết nối được GAS – dùng dữ liệu cache", 3000);
+    }
+  }
+  // Fallback: đọc từ localStorage
+  _initFromLocalStorage();
+  return _mem.quotes ?? [];
+}
+
+// ── Đọc từ localStorage vào _mem ─────────────────────────────────────────────
 function _initFromLocalStorage() {
-  try {
-    const q = localStorage.getItem(LS_QUOTES);
-    _mem.quotes = q ? JSON.parse(q) : [];
-  } catch { _mem.quotes = []; }
-
-  try {
-    const p = localStorage.getItem(LS_PRODUCTS);
-    _mem.products = p ? JSON.parse(p) : [];
-  } catch { _mem.products = []; }
-
-  try {
-    const c = localStorage.getItem(LS_CUSTOMERS);
-    _mem.customers = c ? JSON.parse(c) : [];
-  } catch { _mem.customers = []; }
-
-  try {
-    const ct = localStorage.getItem(LS_CONTRACTS);
-    _mem.contracts = ct ? JSON.parse(ct) : {};
-  } catch { _mem.contracts = {}; }
+  try { const q = localStorage.getItem(LS_QUOTES);    _mem.quotes    = q  ? JSON.parse(q)  : []; } catch { _mem.quotes = []; }
+  try { const p = localStorage.getItem(LS_PRODUCTS);  _mem.products  = p  ? JSON.parse(p)  : []; } catch { _mem.products = []; }
+  try { const c = localStorage.getItem(LS_CUSTOMERS); _mem.customers = c  ? JSON.parse(c)  : []; } catch { _mem.customers = []; }
+  try { const ct= localStorage.getItem(LS_CONTRACTS); _mem.contracts = ct ? JSON.parse(ct) : {}; } catch { _mem.contracts = {}; }
 }
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
-function loadQuotes() {
-  return Promise.resolve(_mem.quotes ?? []);
-}
-
-function saveQuotes(quotes) {
-  _mem.quotes = quotes;
-  _scheduleSave();
-  return Promise.resolve();
-}
+function loadQuotes() { return Promise.resolve(_mem.quotes ?? []); }
+function saveQuotes(quotes) { _mem.quotes = quotes; _scheduleSave(); return Promise.resolve(); }
 
 // ── Product catalog ───────────────────────────────────────────────────────────
-function loadProductCatalog() {
-  return Promise.resolve(_mem.products);
-}
-
-function saveProductCatalog(catalog) {
-  _mem.products = catalog;
-  _scheduleSave();
-  return Promise.resolve();
-}
+function loadProductCatalog() { return Promise.resolve(_mem.products); }
+function saveProductCatalog(catalog) { _mem.products = catalog; _scheduleSave(); return Promise.resolve(); }
 
 async function upsertCatalogItems(items) {
   const byName = new Map(_mem.products.map(p => [p.name, p]));
@@ -594,10 +621,8 @@ async function upsertCatalogItems(items) {
     if (!it.name || !it.name.trim()) return;
     const prev = byName.get(it.name) || {};
     byName.set(it.name, {
-      name:      it.name,
-      note:      it.note      || "",
-      unit:      it.unit      || "Cái",
-      price:     it.price     || 0,
+      name: it.name, note: it.note || "", unit: it.unit || "Cái",
+      price: it.price || 0,
       cost:      it.cost      !== undefined ? it.cost      : (prev.cost      || 0),
       costNoVat: it.costNoVat !== undefined ? it.costNoVat : (prev.costNoVat || 0),
       vatRate:   it.vatRate   !== undefined ? it.vatRate   : (prev.vatRate   !== undefined ? prev.vatRate : 8),
@@ -617,123 +642,96 @@ async function upsertProductImage(name, image, extra = {}) {
 }
 
 // ── Customer catalog ──────────────────────────────────────────────────────────
-function loadCustomerCatalog() {
-  return Promise.resolve(_mem.customers);
-}
-
-function saveCustomerCatalog(catalog) {
-  _mem.customers = catalog;
-  _scheduleSave();
-  return Promise.resolve();
-}
+function loadCustomerCatalog() { return Promise.resolve(_mem.customers); }
+function saveCustomerCatalog(catalog) { _mem.customers = catalog; _scheduleSave(); return Promise.resolve(); }
 
 async function upsertCatalogCustomer(cust) {
   if (!cust.customer || !cust.customer.trim()) return;
   const byName = new Map(_mem.customers.map(c => [c.customer, c]));
   byName.set(cust.customer, {
-    customer: cust.customer,
-    contact:  cust.contact  || "",
-    address:  cust.address  || "",
-    taxId:    cust.taxId    || "",
-    phone:    cust.phone    || "",
+    customer: cust.customer, contact: cust.contact || "",
+    address: cust.address || "", taxId: cust.taxId || "", phone: cust.phone || "",
   });
   _mem.customers = [...byName.values()];
   _scheduleSave();
 }
 
 // ── Contracts ─────────────────────────────────────────────────────────────────
-function loadContract(quoteId) {
-  return Promise.resolve(_mem.contracts[quoteId] || null);
-}
-
+function loadContract(quoteId) { return Promise.resolve(_mem.contracts[quoteId] || null); }
 function saveContract(quoteId, contractData) {
   _mem.contracts[quoteId] = { ...contractData, quoteId };
   _scheduleSave();
   return Promise.resolve();
 }
 
-// ── Migration từ key cũ (v3) ──────────────────────────────────────────────────
-// Chạy một lần nếu user đã có dữ liệu ở key cũ
+// ── Migration từ key cũ ───────────────────────────────────────────────────────
 async function migrateFromLocalStorage() {
-  // Nếu đã có dữ liệu v4 thì bỏ qua
   if (localStorage.getItem(LS_QUOTES) !== null) return;
-
   let migrated = false;
-  try {
-    const q = localStorage.getItem("pmc_quotes_v3");
-    if (q) { _mem.quotes = JSON.parse(q); migrated = true; }
-  } catch {}
-  try {
-    const p = localStorage.getItem("pmc_product_catalog_v1");
-    if (p) _mem.products = JSON.parse(p) || [];
-  } catch {}
-  try {
-    const c = localStorage.getItem("pmc_customer_catalog_v1");
-    if (c) _mem.customers = JSON.parse(c) || [];
-  } catch {}
-
-  if (migrated) {
-    _flushAll();
-    showToast("✅ Đã chuyển dữ liệu cũ sang phiên bản mới", 3000);
-  }
+  try { const q = localStorage.getItem("pmc_quotes_v3"); if (q) { _mem.quotes = JSON.parse(q); migrated = true; } } catch {}
+  try { const p = localStorage.getItem("pmc_product_catalog_v1"); if (p) _mem.products = JSON.parse(p) || []; } catch {}
+  if (migrated) { _flushToLocalStorage(); showToast("✅ Đã chuyển dữ liệu cũ", 3000); }
 }
 
-// ── Xuất / Nhập JSON (backup & restore) ──────────────────────────────────────
-
-// Xuất toàn bộ dữ liệu ra file .json để backup hoặc chuyển sang máy khác
+// ── Xuất / Nhập JSON ─────────────────────────────────────────────────────────
 function exportToJSON() {
-  _flushAll(); // đảm bảo ghi xong trước khi xuất
-  const data = {
-    quotes:    _mem.quotes    ?? [],
-    products:  _mem.products,
-    customers: _mem.customers,
-    contracts: _mem.contracts,
-    exportedAt: new Date().toISOString(),
-  };
+  _flushToLocalStorage();
+  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  const date = new Date().toISOString().slice(0,10).replace(/-/g,"");
-  a.href     = url;
-  a.download = `pmc_baogia_${date}.json`;
-  a.click();
+  a.href = url; a.download = `pmc_baogia_${new Date().toISOString().slice(0,10).replace(/-/g,"")}.json`; a.click();
   URL.revokeObjectURL(url);
   showToast("📤 Đã xuất file JSON");
 }
 
-// Nhập từ file .json (ghi đè toàn bộ dữ liệu hiện tại)
 function importFromJSON(onDone) {
   const input = document.createElement("input");
-  input.type  = "file";
-  input.accept = ".json,application/json";
+  input.type = "file"; input.accept = ".json,application/json";
   input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!Array.isArray(data.quotes)) throw new Error("File không hợp lệ (thiếu trường quotes)");
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.quotes)) throw new Error("File không hợp lệ");
       _mem.quotes    = data.quotes;
       _mem.products  = Array.isArray(data.products)  ? data.products  : [];
       _mem.customers = Array.isArray(data.customers) ? data.customers : [];
       _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
-      _flushAll();
+      await _flushToGAS();
       showToast(`✅ Đã nhập ${data.quotes.length} báo giá từ ${file.name}`);
       if (typeof onDone === "function") onDone(_mem.quotes);
-    } catch(e) {
-      showToast("❌ Lỗi nhập file: " + e.message, 5000);
-    }
+    } catch(e) { showToast("❌ Lỗi nhập file: " + e.message, 5000); }
   };
   input.click();
 }
 
-// ── Toast helper ──────────────────────────────────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg, duration = 3000) {
   const t = document.createElement("div");
   t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a2540;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.3);font-family:'Be Vietnam Pro',sans-serif;pointer-events:none;";
   t.innerHTML = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), duration);
+}
+
+// ── Xác thực đăng nhập ───────────────────────────────────────────────────────
+// Kiểm tra session còn hiệu lực không (24 giờ)
+function isAuthenticated() {
+  try {
+    const raw = localStorage.getItem(LS_AUTHED);
+    if (!raw) return false;
+    const { ts } = JSON.parse(raw);
+    return (Date.now() - ts) < 24 * 60 * 60 * 1000; // 24h
+  } catch { return false; }
+}
+
+function setAuthenticated() {
+  localStorage.setItem(LS_AUTHED, JSON.stringify({ ts: Date.now() }));
+}
+
+function logout() {
+  localStorage.removeItem(LS_AUTHED);
+  location.reload();
 }
 
 // ─── Kết thúc lớp lưu trữ ────────────────────────────────────────────────────
@@ -1005,6 +1003,61 @@ function vatLabel(vatRate) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHẦN 8 – CÁC COMPONENT REACT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── LoginScreen: Màn hình đăng nhập ─────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [pw, setPw]     = React.useState("");
+  const [err, setErr]   = React.useState("");
+  const [show, setShow] = React.useState(false);
+
+  const handleSubmit = () => {
+    if (pw === APP_PASSWORD) {
+      setAuthenticated();
+      onLogin();
+    } else {
+      setErr("Mật khẩu không đúng");
+      setPw("");
+      setTimeout(() => setErr(""), 2500);
+    }
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#f5f3ee" }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:"40px 48px", boxShadow:"0 8px 40px rgba(0,0,0,0.10)", minWidth:340, textAlign:"center" }}>
+        <img src={LOGO_DATA_URL} style={{ width:64, height:64, objectFit:"contain", marginBottom:16 }} alt="PMC" />
+        <div style={{ fontWeight:700, fontSize:18, color:"#1a2540", marginBottom:4 }}>{COMPANY.short}</div>
+        <div style={{ fontSize:12, color:"#888", marginBottom:28 }}>Quản lý báo giá – Đăng nhập để tiếp tục</div>
+
+        <div style={{ position:"relative", marginBottom:12 }}>
+          <input
+            type={show ? "text" : "password"}
+            className="form-control"
+            placeholder="Nhập mật khẩu..."
+            value={pw}
+            onChange={e => setPw(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            autoFocus
+            style={{ paddingRight:40, textAlign:"center", letterSpacing:"0.15em" }}
+          />
+          <button
+            onClick={() => setShow(s => !s)}
+            style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#999", fontSize:16 }}
+          >{show ? "🙈" : "👁️"}</button>
+        </div>
+
+        {err && <div style={{ color:"#dc2626", fontSize:12, marginBottom:10 }}>{err}</div>}
+
+        <button className="btn btn-primary" style={{ width:"100%", marginTop:4 }} onClick={handleSubmit}>
+          Đăng nhập
+        </button>
+
+        <div style={{ fontSize:11, color:"#bbb", marginTop:20 }}>
+          {COMPANY.name}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── ItemRow: Một dòng hàng hóa trong form báo giá ───────────────────────────
 // Props: it (item), idx (index), allQuotes, vatRate, onSetItem, onSetItemFields, onRemove
@@ -3680,6 +3733,7 @@ function App() {
 
   const [quotes, setQuotes] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [authed, setAuthed] = useState(() => isAuthenticated());
 
   const [view, setView] = useState("list");
   const [showModal, setShowModal] = useState(false);
@@ -3694,18 +3748,14 @@ function App() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // ── Khởi động: đọc thẳng từ localStorage, không hỏi file ──────────────────
+  // ── Khởi động: load từ GAS (hoặc cache nếu offline) ──────────────────────
   useEffect(() => {
+    if (!authed) return; // chưa đăng nhập → không load
     (async () => {
       try {
-        // Migration từ key cũ (chạy một lần nếu cần)
         await migrateFromLocalStorage();
-        // Nạp dữ liệu vào _mem từ localStorage
-        _initFromLocalStorage();
-        // Đọc quotes vào React state
-        const data = await loadQuotes();
+        const data = await doLoad();
         setQuotes(data ?? []);
-        // Index sản phẩm nếu chưa có
         if (_mem.products.length === 0 && data && data.length) {
           await upsertCatalogItems(data.flatMap(q => q.items || []));
         }
@@ -3716,7 +3766,7 @@ function App() {
         setLoaded(true);
       }
     })();
-  }, []);
+  }, [authed]);
 
   // ── Tự động lưu mỗi khi quotes thay đổi (debounce) ───────────────────────
   useEffect(() => {
@@ -3782,6 +3832,21 @@ function App() {
     acceptedValue: quotes.filter(q=>q.status==="accepted").reduce((s,q)=>s+calcItems(q.items,q.vatRate).total,0),
   };
 
+  // ── Guard: chưa đăng nhập → hiện LoginScreen ─────────────────────────────
+  if (!authed) {
+    return <LoginScreen onLogin={() => setAuthed(true)} />;
+  }
+
+  // ── Guard: đang load dữ liệu ─────────────────────────────────────────────
+  if (!loaded) {
+    return (
+      <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#f5f3ee", flexDirection:"column", gap:12 }}>
+        <img src={LOGO_DATA_URL} style={{ width:48, opacity:0.5 }} alt="PMC" />
+        <div style={{ color:"#888", fontSize:13 }}>Đang tải dữ liệu...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <div className="topbar no-print">
@@ -3805,6 +3870,14 @@ function App() {
             onClick={() => importFromJSON((newQuotes) => setQuotes(newQuotes))}
           >
             📂 Nhập JSON
+          </button>
+          <button
+            className="btn btn-ghost"
+            title="Đăng xuất"
+            style={{color:"#f99",border:"1px solid rgba(255,255,255,0.2)",fontSize:12}}
+            onClick={logout}
+          >
+            🔒 Đăng xuất
           </button>
           <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setShowModal(true);}}>
             + Tạo báo giá
