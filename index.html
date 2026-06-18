@@ -482,6 +482,8 @@ const sampleData = [];
 // vatRate = -1  →  không tính thuế cho dòng đó.
 function calcItems(items, quoteVatRate) {
   // Per-item VAT: each item uses its own vatRate if set, otherwise falls back to quoteVatRate
+  // Bảo vệ: nếu items thiếu/không phải mảng (dữ liệu lỗi từ Sheet) thì coi như rỗng, không crash app
+  if (!Array.isArray(items)) items = [];
   const subtotal = items.reduce((s, it) => s + (it.qty||0)*(it.price||0), 0);
   const vatTotal = items.reduce((s, it) => {
     const line = (it.qty||0)*(it.price||0);
@@ -574,6 +576,23 @@ function _flushToLocalStorage() {
 }
 
 // ── Load dữ liệu từ GAS (ưu tiên), fallback localStorage ─────────────────────
+// ── Chuẩn hóa 1 quote: đảm bảo items luôn là mảng hợp lệ, tránh crash khi data
+//    từ Google Sheet bị thiếu trường (ô trống, lỗi parse JSON trong Sheet, v.v.)
+function sanitizeQuote(q) {
+  if (!q || typeof q !== "object") q = {};
+  return {
+    ...q,
+    items: Array.isArray(q.items) ? q.items : [],
+    quoteNumber: q.quoteNumber || "",
+    customer: q.customer || "",
+    status: q.status || "draft",
+    vatRate: q.vatRate !== undefined ? q.vatRate : 8,
+  };
+}
+function sanitizeQuotes(arr) {
+  return (Array.isArray(arr) ? arr : []).map(sanitizeQuote);
+}
+
 async function doLoad() {
   // Thử load từ GAS trước
   if (GAS_URL && GAS_URL !== "PASTE_GAS_URL_HERE") {
@@ -582,7 +601,7 @@ async function doLoad() {
       const resp = await fetch(url);
       const data = await resp.json();
       if (data.ok) {
-        _mem.quotes    = Array.isArray(data.quotes)    ? data.quotes    : [];
+        _mem.quotes    = sanitizeQuotes(data.quotes);
         _mem.products  = Array.isArray(data.products)  ? data.products  : [];
         _mem.customers = Array.isArray(data.customers) ? data.customers : [];
         _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
@@ -601,7 +620,7 @@ async function doLoad() {
 
 // ── Đọc từ localStorage vào _mem ─────────────────────────────────────────────
 function _initFromLocalStorage() {
-  try { const q = localStorage.getItem(LS_QUOTES);    _mem.quotes    = q  ? JSON.parse(q)  : []; } catch { _mem.quotes = []; }
+  try { const q = localStorage.getItem(LS_QUOTES);    _mem.quotes    = sanitizeQuotes(q ? JSON.parse(q) : []); } catch { _mem.quotes = []; }
   try { const p = localStorage.getItem(LS_PRODUCTS);  _mem.products  = p  ? JSON.parse(p)  : []; } catch { _mem.products = []; }
   try { const c = localStorage.getItem(LS_CUSTOMERS); _mem.customers = c  ? JSON.parse(c)  : []; } catch { _mem.customers = []; }
   try { const ct= localStorage.getItem(LS_CONTRACTS); _mem.contracts = ct ? JSON.parse(ct) : {}; } catch { _mem.contracts = {}; }
@@ -693,7 +712,7 @@ function importFromJSON(onDone) {
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.quotes)) throw new Error("File không hợp lệ");
-      _mem.quotes    = data.quotes;
+      _mem.quotes    = sanitizeQuotes(data.quotes);
       _mem.products  = Array.isArray(data.products)  ? data.products  : [];
       _mem.customers = Array.isArray(data.customers) ? data.customers : [];
       _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
