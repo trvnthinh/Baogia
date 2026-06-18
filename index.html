@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Báo Giá - Máy Tính Phú Mỹ</title>
+<!-- BUILD_MARKER: v2-fix-calcItems-guard-2026-06-18 -->
+<script>console.log("%c[PMC App] build: v2-fix-calcItems-guard-2026-06-18", "color:#16a34a;font-weight:bold;");</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 
@@ -3768,6 +3770,10 @@ function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // ── Khởi động: load từ GAS (hoặc cache nếu offline) ──────────────────────
+  // loadFailed: true nếu doLoad() không lấy được dữ liệu thật (GAS lỗi + cache rỗng)
+  // → dùng để CHẶN auto-save ghi đè Sheet bằng dữ liệu rỗng/giả ở effect dưới.
+  const [loadFailed, setLoadFailed] = useState(false);
+
   useEffect(() => {
     if (!authed) return; // chưa đăng nhập → không load
     (async () => {
@@ -3781,6 +3787,8 @@ function App() {
       } catch(e) {
         console.error("Load error:", e);
         setQuotes([]);
+        setLoadFailed(true);
+        showToast("⚠️ Không tải được dữ liệu — sẽ KHÔNG tự lưu để tránh mất dữ liệu trên Sheet. Hãy kiểm tra mạng/GAS rồi tải lại trang.", 6000);
       } finally {
         setLoaded(true);
       }
@@ -3788,10 +3796,13 @@ function App() {
   }, [authed]);
 
   // ── Tự động lưu mỗi khi quotes thay đổi (debounce) ───────────────────────
+  // Bảo vệ: KHÔNG auto-save nếu load ban đầu thất bại — tránh ghi đè dữ liệu
+  // thật trên Google Sheet bằng mảng rỗng/dữ liệu chưa load đúng.
   useEffect(() => {
     if (!loaded) return;
+    if (loadFailed) return;
     saveQuotes(quotes);
-  }, [quotes, loaded]);
+  }, [quotes, loaded, loadFailed]);
 
   const saveQuote = (q) => {
     setQuotes(prev => {
@@ -4215,7 +4226,35 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+// ── ErrorBoundary: bắt crash bất ngờ trong render, tránh màn hình trắng/kẹt
+//    vô thời hạn. Hiện thông tin lỗi để dễ debug + nút tải lại trang.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("App crash:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f3ee",padding:24}}>
+          <div style={{background:"#fff",borderRadius:12,padding:"32px 36px",maxWidth:520,boxShadow:"0 8px 40px rgba(0,0,0,0.1)"}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+            <div style={{fontWeight:700,fontSize:16,color:"#1a2540",marginBottom:8}}>Đã xảy ra lỗi khi hiển thị dữ liệu</div>
+            <div style={{fontSize:13,color:"#666",marginBottom:16,lineHeight:1.6}}>
+              Có thể một báo giá trên Google Sheet bị thiếu/sai dữ liệu. Dữ liệu của bạn vẫn an toàn trên Sheet — vấn đề chỉ ở hiển thị.
+            </div>
+            <div style={{background:"#f9f8f5",border:"1px solid #e5e3dc",borderRadius:6,padding:"8px 12px",fontSize:11,color:"#888",fontFamily:"monospace",marginBottom:16,wordBreak:"break-all"}}>
+              {String(this.state.error && this.state.error.message || this.state.error)}
+            </div>
+            <button className="btn btn-primary" onClick={()=>location.reload()}>🔄 Tải lại trang</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App /></ErrorBoundary>);
 </script>
 </body>
 </html>
