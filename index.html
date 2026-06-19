@@ -942,6 +942,7 @@ function LoginScreen({ onLogin }) {
             className="form-control"
             placeholder="Nhập mật khẩu..."
             value={pw}
+            autoComplete="new-password"
             onChange={e => setPw(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleSubmit()}
             autoFocus
