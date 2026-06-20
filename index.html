@@ -320,6 +320,31 @@ function numberToWordsCN(num) { return new Intl.NumberFormat("zh").format(num) +
 // PHẦN 4 – TRẠNG THÁI BÁO GIÁ & DỮ LIỆU MẪU
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── Màu khách hàng: hash tên → màu ổn định, đủ tương phản ─────────────────────
+const CUSTOMER_COLORS = [
+  { bg:"#dbeafe", text:"#1e40af" }, // xanh dương
+  { bg:"#dcfce7", text:"#166534" }, // xanh lá
+  { bg:"#fef9c3", text:"#854d0e" }, // vàng
+  { bg:"#fce7f3", text:"#9d174d" }, // hồng
+  { bg:"#ede9fe", text:"#5b21b6" }, // tím
+  { bg:"#ffedd5", text:"#9a3412" }, // cam
+  { bg:"#cffafe", text:"#155e75" }, // cyan
+  { bg:"#fef2f2", text:"#991b1b" }, // đỏ nhạt
+  { bg:"#f0fdf4", text:"#14532d" }, // xanh mint
+  { bg:"#faf5ff", text:"#6b21a8" }, // tím nhạt
+  { bg:"#fff7ed", text:"#c2410c" }, // cam đất
+  { bg:"#ecfdf5", text:"#065f46" }, // ngọc
+];
+function getCustomerColor(name) {
+  if (!name) return { bg:"#f3f4f6", text:"#374151" };
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return CUSTOMER_COLORS[Math.abs(hash) % CUSTOMER_COLORS.length];
+}
+
 // Nhãn hiển thị cho từng trạng thái báo giá
 const STATUS_LABELS = {
   draft: "Nháp",
@@ -430,7 +455,10 @@ async function _flushToGAS() {
       console.error("GAS trả về không phải JSON:", rawText.slice(0, 300));
       throw new Error("GAS không phản hồi JSON hợp lệ — kiểm tra lại deployment (Anyone access?) và URL");
     }
-    if (!data.ok) throw new Error(data.error || "GAS trả ok:false không rõ lý do");
+    if (!data.ok) {
+      if (data.error === "Unauthorized") { _onGASUnauthorized(); return; }
+      throw new Error(data.error || "GAS trả ok:false không rõ lý do");
+    }
     // Cập nhật cache local sau khi save thành công
     _flushToLocalStorage();
     showToast("💾 Đã lưu lên Google Drive", 1500);
@@ -485,14 +513,19 @@ async function doLoad() {
         console.log(`✅ Load từ GAS: ${_mem.quotes.length} báo giá`);
         return _mem.quotes;
       } else {
+        if (data.error === "Unauthorized") {
+          _onGASUnauthorized();
+          throw new Error("Unauthorized"); // dừng lại, không fallback localStorage
+        }
         throw new Error(data.error || "GAS trả ok:false");
       }
     } catch(e) {
+      if (e.message === "Unauthorized") throw e; // re-throw để useEffect bắt
       console.warn("GAS load failed, dùng cache:", e);
       showToast("⚠️ Lỗi tải từ GAS: " + e.message, 4000);
     }
   }
-  // Fallback: đọc từ localStorage
+  // Fallback: đọc từ localStorage (chỉ khi lỗi khác, không phải Unauthorized)
   _initFromLocalStorage();
   return _mem.quotes ?? [];
 }
@@ -665,6 +698,13 @@ async function logout() {
     try { await fetch(`${GAS_URL}?action=logout&token=${encodeURIComponent(token)}`); } catch {}
   }
   location.reload();
+}
+
+// ── Xử lý GAS trả Unauthorized: xóa token + báo App về màn đăng nhập ─────────
+function _onGASUnauthorized() {
+  localStorage.removeItem(LS_TOKEN);
+  window.dispatchEvent(new CustomEvent("gas_unauthorized"));
+  showToast("⛔ Phiên đăng nhập hết hạn — vui lòng đăng nhập lại", 4000);
 }
 
 // ─── Kết thúc lớp lưu trữ ────────────────────────────────────────────────────
@@ -3761,6 +3801,13 @@ function App() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
+  // Lắng nghe GAS Unauthorized event → chuyển về màn đăng nhập ngay
+  useEffect(() => {
+    const handler = () => setAuthed(false);
+    window.addEventListener("gas_unauthorized", handler);
+    return () => window.removeEventListener("gas_unauthorized", handler);
+  }, []);
+
   // ── Khởi động: load từ GAS (hoặc cache nếu offline) ──────────────────────
   useEffect(() => {
     if (!authed) return; // chưa đăng nhập → không load
@@ -3974,7 +4021,16 @@ function App() {
                         return (
                           <tr key={q.id} style={{cursor:"pointer"}} onClick={()=>{setEditQuote(q);setShowModal(true);}}>
                             <td style={{fontWeight:500,color:"#1a2540"}}>{q.quoteNumber}</td>
-                            <td>{q.customer}</td>
+                            <td>
+                              {(() => {
+                                const col = getCustomerColor(q.customer);
+                                return (
+                                  <span style={{background:col.bg,color:col.text,borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:600}}>
+                                    {q.customer}
+                                  </span>
+                                );
+                              })()}
+                            </td>
                             <td style={{color:"#888"}}>{q.date}</td>
                             <td style={{fontWeight:500}}>{fmt(total)} đ</td>
                             <td><span className={`badge badge-${q.status}`}>{STATUS_LABELS[q.status]}</span></td>
@@ -4086,13 +4142,31 @@ function App() {
                             <tr key={q.id}>
                               <td style={{fontWeight:500,color:"#1a2540"}}>{q.quoteNumber}</td>
                               <td>
-                                <div style={{fontWeight:500}}>{q.customer}</div>
-                                {q.contact&&<div style={{fontSize:11,color:"#aaa"}}>{q.contact}</div>}
-                                {matchedItems.length>0&&(
-                                  <div style={{fontSize:10,color:"#1a2540",background:"#eef0f8",padding:"2px 5px",borderRadius:3,marginTop:3,display:"inline-block"}}>
-                                    📦 {matchedItems.map(i=>i.name).join(", ").substring(0,60)}
-                                  </div>
-                                )}
+                                {(() => {
+                                  const col = getCustomerColor(q.customer);
+                                  return (
+                                    <div style={{display:"flex",alignItems:"flex-start",gap:7}}>
+                                      <span style={{
+                                        display:"inline-block", flexShrink:0, marginTop:2,
+                                        background:col.bg, color:col.text,
+                                        borderRadius:4, padding:"2px 7px",
+                                        fontSize:11, fontWeight:600, whiteSpace:"nowrap",
+                                        maxWidth:120, overflow:"hidden", textOverflow:"ellipsis"
+                                      }} title={q.customer}>
+                                        {q.customer.length > 16 ? q.customer.slice(0,14)+"…" : q.customer}
+                                      </span>
+                                      <div>
+                                        <div style={{fontWeight:500}}>{q.customer}</div>
+                                        {q.contact&&<div style={{fontSize:11,color:"#aaa"}}>{q.contact}</div>}
+                                        {matchedItems.length>0&&(
+                                          <div style={{fontSize:10,color:"#1a2540",background:"#eef0f8",padding:"2px 5px",borderRadius:3,marginTop:3,display:"inline-block"}}>
+                                            📦 {matchedItems.map(i=>i.name).join(", ").substring(0,60)}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td style={{color:"#888",whiteSpace:"nowrap"}}>{q.date}</td>
                               <td style={{textAlign:"center",color:"#888"}}>{q.items.length} dòng</td>
