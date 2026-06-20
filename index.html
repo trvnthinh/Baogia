@@ -219,7 +219,183 @@
     .handover-items-table tr:last-child td { border-bottom: none !important; }
     .handover-header-table td:first-child { border-right: 2px solid #000 !important; }
   }
-</style>
+
+  /* ═══════════════════════════════════════════════════════════════════
+     MOBILE RESPONSIVE  (max-width: 768px)
+     Thứ tự: layout → topbar → sidebar → content → table → modal → form
+  ═══════════════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+
+    /* ── Layout tổng thể ── */
+    body { font-size: 13px; }
+    .main { flex-direction: column; }
+    .content { padding: 12px; max-height: none; }
+
+    /* ── Topbar: ẩn text, chỉ giữ logo + nút tạo mới ── */
+    .topbar { padding: 0 12px; height: 50px; }
+    .topbar-brand span { display: none; }          /* ẩn chữ tên công ty */
+    .topbar-actions .btn-export,
+    .topbar-actions .btn-import { display: none; } /* ẩn nút xuất/nhập JSON */
+
+    /* ── Sidebar → bottom tab bar ── */
+    .sidebar {
+      width: 100%;
+      min-height: auto;
+      flex-direction: row;
+      border-right: none;
+      border-top: 1px solid #e5e3dc;
+      padding: 0;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 90;
+      background: #fff;
+      box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    /* Ẩn section labels và status sub-items trên mobile */
+    .sidebar-section { display: none; }
+    .sidebar-item:nth-child(n+9) { display: none; } /* ẩn các item trạng thái */
+    .sidebar-item {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      min-width: 64px;
+      padding: 8px 4px 10px;
+      gap: 3px;
+      font-size: 10px;
+      border-right: none;
+      border-bottom: none;
+    }
+    .sidebar-item.active {
+      border-right: none;
+      border-top: 2px solid #1a2540;
+      background: #f0f4ff;
+    }
+    .sidebar-item svg { width: 20px; height: 20px; opacity: 0.8; }
+    .sidebar-badge { display: none; }
+
+    /* Bù padding-bottom để content không bị tab bar che */
+    .content { padding-bottom: 80px; }
+
+    /* ── Stats grid: 2 cột thay vì 4 ── */
+    .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .stat-card { padding: 12px 14px; }
+    .stat-value { font-size: 18px; }
+
+    /* ── Filter bar: xếp dọc ── */
+    .filter-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+    .search-input { width: 100%; }
+
+    /* ── Bảng danh sách: scroll ngang, tăng font ── */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { font-size: 12px; min-width: 560px; }
+    th, td { padding: 8px 8px; }
+
+    /* ── Form rows: 1 cột thay vì 2/3 ── */
+    .form-row-2,
+    .form-row-3 { grid-template-columns: 1fr; }
+
+    /* ── Modal: toàn màn hình ── */
+    .modal-overlay { padding: 0; align-items: flex-end; }
+    .modal {
+      width: 100vw;
+      max-width: 100vw;
+      height: 95vh;
+      max-height: 95vh;
+      border-radius: 16px 16px 0 0;
+      margin: 0;
+    }
+    .modal-header { padding: 14px 16px; }
+    .modal-title { font-size: 15px; }
+    .modal-body { padding: 12px 14px; font-size: 14px; }
+    .modal-footer {
+      padding: 10px 14px;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: stretch;
+    }
+    .modal-footer .btn { flex: 1; justify-content: center; font-size: 12px; padding: 8px 6px; }
+
+    /* ── Items table trong modal QuoteModal: ẩn cột nội bộ, scroll ngang ── */
+    .items-table { min-width: 500px; }
+    .items-table .internal-col { display: none; }  /* ẩn giá nhập, lợi nhuận */
+    .items-table th.internal-col { display: none; }
+
+    /* ── Total summary ── */
+    .total-row { font-size: 13px; }
+    .total-row.grand { font-size: 15px; }
+
+    /* ── Card header ── */
+    .card-header { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
+
+    /* ── Btn sizes ── */
+    .btn { font-size: 12px; padding: 7px 10px; }
+    .btn-sm { font-size: 11px; padding: 4px 8px; }
+
+    /* ── Login screen ── */
+    .login-card { padding: 28px 20px !important; min-width: unset !important; width: calc(100vw - 32px) !important; }
+
+    /* ── Báo giá preview (PrintModal) ── */
+    .quote-preview { padding: 10px 0; font-size: 11px; }
+    .quote-company-header { flex-direction: column; gap: 8px; }
+    .company-logo-img { width: 48px; height: 48px; }
+    .company-info h2 { font-size: 12px; }
+    .company-info p { font-size: 10px; }
+    .quote-title-block h1 { font-size: 16px; }
+    .quote-items-table { font-size: 10px; }
+    .quote-footer { flex-direction: column; gap: 12px; }
+
+    /* ── Handover/Delivery: form trái ẩn trên mobile, xem trước full ── */
+    .hw-form-col { display: none; }
+
+    /* ── Section title ── */
+    .section-title { font-size: 12px; }
+
+    /* ── Sidebar labels: ẩn khi sidebar thành tab bar ── */
+    .sidebar-label { font-size: 10px; line-height: 1.2; text-align: center; }
+    .sidebar-badge { display: none; }
+  }
+
+  /* Tablet (768–1024px): giữ sidebar nhưng hẹp lại */
+  @media (max-width: 1024px) and (min-width: 769px) {
+    .sidebar { width: 180px; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .form-row-3 { grid-template-columns: 1fr 1fr; }
+    .modal { max-width: 96vw; }
+  }
+
+    /* ── FAB: nút tạo báo giá nổi trên mobile ── */
+    .fab-btn {
+      display: none; /* ẩn trên desktop */
+    }
+    @media (max-width: 768px) {
+      .fab-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        bottom: 72px; /* trên tab bar */
+        right: 16px;
+        width: 52px; height: 52px;
+        border-radius: 50%;
+        background: #1a2540;
+        color: #fff;
+        font-size: 26px;
+        font-weight: 300;
+        border: none;
+        box-shadow: 0 4px 16px rgba(26,37,64,0.35);
+        cursor: pointer;
+        z-index: 95;
+        line-height: 1;
+      }
+      .fab-btn:active { transform: scale(0.93); }
+      /* Ẩn nút tạo trong topbar trên mobile (FAB thay thế) */
+      .topbar-create { display: none; }
+    }
+
+  </style>
 </head>
 <body>
 <div id="root"></div>
@@ -1001,7 +1177,7 @@ function LoginScreen({ onLogin }) {
 
   return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#f5f3ee" }}>
-      <div style={{ background:"#fff", borderRadius:16, padding:"40px 48px", boxShadow:"0 8px 40px rgba(0,0,0,0.10)", minWidth:340, textAlign:"center" }}>
+      <div className="login-card" style={{ background:"#fff", borderRadius:16, padding:"40px 48px", boxShadow:"0 8px 40px rgba(0,0,0,0.10)", minWidth:340, textAlign:"center" }}>
         <img src={LOGO_DATA_URL} style={{ width:64, height:64, objectFit:"contain", marginBottom:16 }} alt="PMC" />
         <div style={{ fontWeight:700, fontSize:18, color:"#1a2540", marginBottom:4 }}>{COMPANY.short}</div>
         <div style={{ fontSize:12, color:"#888", marginBottom:28 }}>Quản lý báo giá – Đăng nhập để tiếp tục</div>
@@ -2126,7 +2302,7 @@ function HandoverModal({ quote, onClose }) {
         </div>
         <div className="modal-body" style={{ display: "flex", gap: 20 }}>
           {/* Left: Form */}
-          <div className="no-print" style={{ width: 320, flexShrink: 0, borderRight: "1px solid #e5e3dc", paddingRight: 20 }}>
+          <div className="no-print hw-form-col" style={{ width: 320, flexShrink: 0, borderRight: "1px solid #e5e3dc", paddingRight: 20 }}>
             <div className="hw-form-section">
               <h4>Thông tin biên bản</h4>
               <div className="form-group">
@@ -2473,7 +2649,7 @@ function DeliveryModal({ quote, onClose }) {
         <div className="modal-body" style={{ display: "flex", gap: 20 }}>
 
           {/* ── Cột trái: Form nhập ── */}
-          <div className="no-print" style={{ width: 300, flexShrink: 0, borderRight: "1px solid #e5e3dc", paddingRight: 20, overflowY: "auto" }}>
+          <div className="no-print hw-form-col" style={{ width: 300, flexShrink: 0, borderRight: "1px solid #e5e3dc", paddingRight: 20, overflowY: "auto" }}>
 
             <div className="hw-form-section">
               <h4>Thông tin phiếu</h4>
@@ -3919,7 +4095,7 @@ function App() {
             className="btn btn-ghost"
             title="Xuất toàn bộ dữ liệu ra file .json để backup hoặc chuyển máy"
             style={{color:"#fff",border:"1px solid rgba(255,255,255,0.3)",fontSize:12}}
-            onClick={() => exportToJSON()}
+            className="btn-export" onClick={() => exportToJSON()}
           >
             📤 Xuất JSON
           </button>
@@ -3927,7 +4103,7 @@ function App() {
             className="btn btn-ghost"
             title="Nhập dữ liệu từ file .json (ghi đè dữ liệu hiện tại)"
             style={{color:"#adc",border:"1px solid rgba(255,255,255,0.2)",fontSize:12}}
-            onClick={() => importFromJSON((newQuotes) => setQuotes(newQuotes))}
+            className="btn-import" onClick={() => importFromJSON((newQuotes) => setQuotes(newQuotes))}
           >
             📂 Nhập JSON
           </button>
@@ -3939,7 +4115,7 @@ function App() {
           >
             🔒 Đăng xuất
           </button>
-          <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setShowModal(true);}}>
+          <button className="btn btn-primary topbar-create" onClick={()=>{setEditQuote(null);setShowModal(true);}}>
             + Tạo báo giá
           </button>
         </div>
@@ -3950,16 +4126,16 @@ function App() {
           <div className="sidebar-section">Menu</div>
           <div className={`sidebar-item ${view==="dashboard"?"active":""}`} onClick={()=>setView("dashboard")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            Dashboard
+            <span className="sidebar-label">Dashboard</span>
           </div>
           <div className={`sidebar-item ${view==="list"?"active":""}`} onClick={()=>setView("list")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2"/></svg>
-            Danh sách báo giá
+            <span className="sidebar-label">Báo giá</span>
             <span className="sidebar-badge">{quotes.length}</span>
           </div>
           <div className={`sidebar-item ${view==="handover"?"active":""}`} onClick={()=>setView("handover")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9S3 16.97 3 12 7.03 3 12 3s9 4.03 9 9z"/></svg>
-            Biên bản bàn giao
+            <span className="sidebar-label">Biên bản</span>
           </div>
 
           <div className="sidebar-section">Trạng thái</div>
@@ -4214,6 +4390,9 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* FAB: nút tạo báo giá nổi, chỉ hiện trên mobile */}
+      <button className="fab-btn no-print" onClick={()=>{setEditQuote(null);setShowModal(true);}} title="Tạo báo giá mới">＋</button>
 
       {showModal && (
         <QuoteModal
