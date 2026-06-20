@@ -395,6 +395,33 @@
       .topbar-create { display: none; }
     }
 
+  /* ── Tasks / Kanban ─────────────────────────────────────────────────────── */
+  .task-card { background:#fff; border:1px solid #e5e3dc; border-radius:8px; padding:12px 14px; margin-bottom:8px; cursor:grab; transition:box-shadow 0.15s; }
+  .task-card:active { cursor:grabbing; box-shadow:0 4px 16px rgba(0,0,0,0.12); }
+  .task-card.dragging { opacity:0.5; }
+  .task-card.drag-over { border:2px dashed #1a2540; }
+  .task-title { font-weight:500; font-size:14px; color:#1a2540; margin-bottom:4px; }
+  .task-meta { font-size:11px; color:#888; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .task-tag { background:#eef0f8; color:#1a2540; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:500; }
+  .task-tag.urgent { background:#fee2e2; color:#991b1b; }
+  .task-tag.linked { background:#dcfce7; color:#166534; }
+  .progress-bar { height:4px; background:#e5e3dc; border-radius:2px; margin-top:6px; overflow:hidden; }
+  .progress-fill { height:100%; border-radius:2px; background:#1a2540; transition:width 0.3s; }
+  .kanban-col { background:#f9f8f5; border-radius:10px; padding:12px; min-height:200px; flex:1; }
+  .kanban-col-header { font-size:12px; font-weight:600; color:#666; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; }
+  .kanban-col-count { background:#1a2540; color:#fff; font-size:10px; padding:1px 6px; border-radius:10px; }
+  .kanban-wrap { display:flex; gap:12px; margin-top:16px; }
+  .priority-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .priority-high { background:#ef4444; }
+  .priority-medium { background:#f59e0b; }
+  .priority-low { background:#22c55e; }
+  .task-list-item { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid #f0ede6; }
+  .task-list-item:last-child { border-bottom:none; }
+  .task-list-item:hover { background:#fafaf7; }
+  .task-checkbox { width:18px; height:18px; border-radius:4px; border:2px solid #d1cfc6; cursor:pointer; flex-shrink:0; margin-top:1px; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
+  .task-checkbox.checked { background:#1a2540; border-color:#1a2540; color:#fff; }
+  .task-progress-input { width:48px; height:22px; font-size:12px; text-align:center; border:1px solid #d1cfc6; border-radius:4px; padding:0 4px; }
+
   </style>
 </head>
 <body>
@@ -575,6 +602,7 @@ const LS_PRODUCTS  = "pmc_products_v4";
 const LS_CUSTOMERS = "pmc_customers_v4";
 const LS_CONTRACTS  = "pmc_contracts_v4";
 const LS_HANDOVERS  = "pmc_handovers_v4";
+const LS_TASKS      = "pmc_tasks_v4";
 const LS_DELIVERIES = "pmc_deliveries_v4";
 const LS_TOKEN  = "pmc_session_token";  // session token từ GAS
 
@@ -586,6 +614,7 @@ const _mem = {
   contracts:  {},
   handovers:  {},
   deliveries: {},
+  tasks:      [],
 };
 
 // ── Debounce save ─────────────────────────────────────────────────────────────
@@ -619,6 +648,7 @@ async function _flushToGAS() {
           contracts:  _mem.contracts,
           handovers:  _mem.handovers,
           deliveries: _mem.deliveries,
+          tasks:      _mem.tasks,
         }
       }),
     });
@@ -654,6 +684,7 @@ function _flushToLocalStorage() {
     localStorage.setItem(LS_CONTRACTS,  JSON.stringify(_mem.contracts));
     localStorage.setItem(LS_HANDOVERS,  JSON.stringify(_mem.handovers));
     localStorage.setItem(LS_DELIVERIES, JSON.stringify(_mem.deliveries));
+    localStorage.setItem(LS_TASKS,      JSON.stringify(_mem.tasks));
   } catch(e) { console.warn("localStorage full:", e); }
 }
 
@@ -680,6 +711,8 @@ async function doLoad() {
         _mem.contracts  = (data.contracts  && typeof data.contracts  === "object") ? data.contracts  : {};
         _mem.handovers  = (data.handovers   && typeof data.handovers   === "object") ? data.handovers  : {};
         _mem.deliveries = (data.deliveries  && typeof data.deliveries  === "object") ? data.deliveries : {};
+      _mem.tasks      = Array.isArray(data.tasks) ? data.tasks : [];
+        _mem.tasks      = Array.isArray(data.tasks) ? data.tasks : [];
         // ── Nạp config từ server (không hardcode trong HTML) ──
         if (data.company)          Object.assign(COMPANY, data.company);
         if (data.contractDefaults) Object.assign(CONTRACT_DEFAULTS, data.contractDefaults);
@@ -714,6 +747,7 @@ function _initFromLocalStorage() {
   try { const ct= localStorage.getItem(LS_CONTRACTS);  _mem.contracts  = ct  ? JSON.parse(ct)  : {}; } catch { _mem.contracts  = {}; }
   try { const hw= localStorage.getItem(LS_HANDOVERS);   _mem.handovers  = hw  ? JSON.parse(hw)  : {}; } catch { _mem.handovers  = {}; }
   try { const dv= localStorage.getItem(LS_DELIVERIES);  _mem.deliveries = dv  ? JSON.parse(dv)  : {}; } catch { _mem.deliveries = {}; }
+  try { const tk= localStorage.getItem(LS_TASKS);        _mem.tasks      = tk  ? JSON.parse(tk)  : []; } catch { _mem.tasks      = []; }
 }
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
@@ -789,6 +823,10 @@ function saveDelivery(id, data) {
   return Promise.resolve();
 }
 
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+function loadTasks() { return Promise.resolve([...(_mem.tasks || [])]); }
+function saveTasks(tasks) { _mem.tasks = tasks; _scheduleSave(); return Promise.resolve(); }
+
 // ── Migration từ key cũ ───────────────────────────────────────────────────────
 async function migrateFromLocalStorage() {
   if (localStorage.getItem(LS_QUOTES) !== null) return;
@@ -801,7 +839,7 @@ async function migrateFromLocalStorage() {
 // ── Xuất / Nhập JSON ─────────────────────────────────────────────────────────
 function exportToJSON() {
   _flushToLocalStorage();
-  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, handovers: _mem.handovers, deliveries: _mem.deliveries, exportedAt: new Date().toISOString() };
+  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, handovers: _mem.handovers, deliveries: _mem.deliveries, tasks: _mem.tasks, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -3958,6 +3996,411 @@ const handlePDFClick = async () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Quản lý state toàn cục: quotes, modal đang mở, tìm kiếm, xác nhận xóa...
 // Render: Topbar → Sidebar → Content (Dashboard / Danh sách báo giá / Catalog)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TASKS – Quản lý công việc hằng ngày kèm tiến độ
+// ═══════════════════════════════════════════════════════════════════════════════
+const TASK_STATUSES = ["todo", "doing", "done"];
+const TASK_STATUS_LABELS = { todo: "Cần làm", doing: "Đang làm", done: "Xong" };
+const TASK_STATUS_COLORS = { todo: "#6b7280", doing: "#2563eb", done: "#16a34a" };
+const TASK_PRIORITIES = ["high", "medium", "low"];
+const TASK_PRIORITY_LABELS = { high: "Khẩn", medium: "Bình thường", low: "Thấp" };
+
+function genTaskId() { return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function todayISO() { return new Date().toISOString().slice(0,10); }
+
+function isOverdue(task) {
+  if (!task.dueDate || task.status === "done") return false;
+  return task.dueDate < todayISO();
+}
+
+// ── TaskFormModal: tạo / sửa task ────────────────────────────────────────────
+function TaskFormModal({ task, quotes, onSave, onClose }) {
+  const isNew = !task;
+  const [form, setForm] = React.useState(task ? { ...task } : {
+    id: genTaskId(), title: "", description: "", status: "todo",
+    priority: "medium", progress: 0, dueDate: todayISO(),
+    quoteId: "", createdAt: new Date().toISOString(),
+  });
+  const set = (f, v) => setForm(p => ({ ...p, [f]: v }));
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520, height: "auto", maxHeight: "90vh" }}>
+        <div className="modal-header">
+          <span className="modal-title">{isNew ? "➕ Thêm công việc" : "✏️ Sửa công việc"}</span>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="form-group">
+            <label>Tên công việc *</label>
+            <input className="form-control" value={form.title} onChange={e => set("title", e.target.value)} placeholder="VD: Gọi điện cho khách hàng A..." autoFocus />
+          </div>
+          <div className="form-group">
+            <label>Mô tả chi tiết</label>
+            <textarea className="form-control" rows={3} value={form.description || ""} onChange={e => set("description", e.target.value)} placeholder="Ghi chú thêm..." />
+          </div>
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label>Trạng thái</label>
+              <select className="form-control" value={form.status} onChange={e => set("status", e.target.value)}>
+                {TASK_STATUSES.map(s => <option key={s} value={s}>{TASK_STATUS_LABELS[s]}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Độ ưu tiên</label>
+              <select className="form-control" value={form.priority} onChange={e => set("priority", e.target.value)}>
+                {TASK_PRIORITIES.map(p => <option key={p} value={p}>{TASK_PRIORITY_LABELS[p]}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Deadline</label>
+              <input className="form-control" type="date" value={form.dueDate || ""} onChange={e => set("dueDate", e.target.value)} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Tiến độ: <strong>{form.progress}%</strong></label>
+            <input type="range" min={0} max={100} step={5} value={form.progress}
+              onChange={e => { const v = Number(e.target.value); set("progress", v); if (v === 100) set("status", "done"); else if (v > 0 && form.status === "todo") set("status", "doing"); }}
+              style={{ width: "100%", accentColor: "#1a2540" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#aaa", marginTop: 2 }}>
+              <span>0%</span><span>50%</span><span>100%</span>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Liên kết báo giá (tùy chọn)</label>
+            <select className="form-control" value={form.quoteId || ""} onChange={e => set("quoteId", e.target.value)}>
+              <option value="">— Không liên kết —</option>
+              {(quotes || []).map(q => (
+                <option key={q.id} value={q.id}>{q.quoteNumber} – {q.customer}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Hủy</button>
+          <button className="btn btn-primary" onClick={() => { if (!form.title.trim()) { alert("Vui lòng nhập tên công việc"); return; } onSave(form); }}>
+            💾 Lưu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TaskCard: card hiển thị trong kanban hoặc list ───────────────────────────
+function TaskCard({ task, quotes, onEdit, onDelete, onProgressChange, onStatusChange, draggable, onDragStart, onDragOver, onDrop }) {
+  const linkedQuote = task.quoteId ? (quotes || []).find(q => q.id === task.quoteId) : null;
+  const overdue = isOverdue(task);
+
+  return (
+    <div className="task-card"
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={e => { e.preventDefault(); onDragOver && onDragOver(e); }}
+      onDrop={onDrop}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
+        {/* Priority dot */}
+        <span className={`priority-dot priority-${task.priority || "medium"}`} style={{ marginTop: 4 }} />
+        <div style={{ flex: 1 }}>
+          <div className="task-title" style={{ textDecoration: task.status === "done" ? "line-through" : "none", color: task.status === "done" ? "#aaa" : "#1a2540" }}>
+            {task.title}
+          </div>
+          {task.description && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{task.description}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button onClick={() => onEdit(task)} style={{ background: "none", border: "none", cursor: "pointer", color: "#888", fontSize: 14, padding: "2px 4px" }}>✏️</button>
+          <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 14, padding: "2px 4px", opacity: 0.5 }}
+            onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "0.5"}
+          >🗑️</button>
+        </div>
+      </div>
+      <div className="task-meta">
+        {task.dueDate && (
+          <span style={{ color: overdue ? "#dc2626" : "#888" }}>
+            {overdue ? "⚠️ " : "📅 "}{task.dueDate}
+          </span>
+        )}
+        {task.priority === "high" && <span className="task-tag urgent">🔴 Khẩn</span>}
+        {linkedQuote && <span className="task-tag linked">🔗 {linkedQuote.quoteNumber}</span>}
+      </div>
+      {/* Progress bar */}
+      <div style={{ marginTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="progress-bar" style={{ flex: 1 }}>
+            <div className="progress-fill" style={{ width: (task.progress || 0) + "%", background: task.status === "done" ? "#16a34a" : "#1a2540" }} />
+          </div>
+          <input className="task-progress-input" type="number" min={0} max={100} value={task.progress || 0}
+            onChange={e => onProgressChange(task.id, Number(e.target.value))}
+            onClick={e => e.stopPropagation()} />
+          <span style={{ fontSize: 11, color: "#888" }}>%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TasksView: màn hình chính quản lý công việc ───────────────────────────────
+function TasksView({ quotes }) {
+  const [tasks, setTasks]           = React.useState([]);
+  const [loaded, setLoaded]         = React.useState(false);
+  const [editTask, setEditTask]     = React.useState(null);
+  const [showForm, setShowForm]     = React.useState(false);
+  const [filterPri, setFilterPri]   = React.useState("all");
+  const [dragId, setDragId]         = React.useState(null);
+  const [search, setSearch]         = React.useState("");
+
+  React.useEffect(() => {
+    loadTasks().then(t => { setTasks(t || []); setLoaded(true); }).catch(() => setLoaded(true));
+  }, []);
+
+  const persist = (newTasks) => { setTasks(newTasks); saveTasks(newTasks); };
+
+  const saveTask = (task) => {
+    const idx = tasks.findIndex(t => t.id === task.id);
+    const updated = idx >= 0 ? tasks.map(t => t.id === task.id ? task : t) : [task, ...tasks];
+    persist(updated);
+    setShowForm(false); setEditTask(null);
+  };
+
+  const deleteTask = (id) => { if (window.confirm("Xóa công việc này?")) persist(tasks.filter(t => t.id !== id)); };
+
+  const updateProgress = (id, val) => {
+    persist(tasks.map(t => t.id === id ? {
+      ...t, progress: Math.max(0, Math.min(100, val)),
+      status: val >= 100 ? "done" : val > 0 ? "doing" : "todo"
+    } : t));
+  };
+
+  const updateStatus = (id, status) => {
+    persist(tasks.map(t => t.id === id ? {
+      ...t, status,
+      progress: status === "done" ? 100 : status === "todo" ? 0 : t.progress
+    } : t));
+  };
+
+  // Drag & drop kanban
+  const handleDrop = (targetStatus) => {
+    if (!dragId) return;
+    updateStatus(dragId, targetStatus);
+    setDragId(null);
+  };
+
+  const filtered = tasks.filter(t => {
+    const matchPri = filterPri === "all" || t.priority === filterPri;
+    const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase());
+    return matchPri && matchSearch;
+  });
+
+  const todayTasks = filtered.filter(t => t.dueDate === todayISO() && t.status !== "done");
+  const overdueTasks = filtered.filter(t => isOverdue(t));
+  const upcomingTasks = filtered.filter(t => t.dueDate > todayISO() && t.status !== "done");
+  const doneTasks = filtered.filter(t => t.status === "done");
+
+  // Stats
+  const total = tasks.length;
+  const doneCount = tasks.filter(t => t.status === "done").length;
+  const overdueCount = tasks.filter(t => isOverdue(t)).length;
+  const avgProgress = total ? Math.round(tasks.reduce((s, t) => s + (t.progress || 0), 0) / total) : 0;
+
+  if (!loaded) return <div className="empty-state"><div style={{fontSize:32}}>⏳</div><h3>Đang tải công việc...</h3></div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: "#1a2540", marginBottom: 4 }}>📋 Công việc hằng ngày</h2>
+          <p style={{ color: "#888", fontSize: 13 }}>{total} công việc · {doneCount} hoàn thành · {overdueCount > 0 ? `${overdueCount} quá hạn ⚠️` : "không quá hạn"}</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditTask(null); setShowForm(true); }}>+ Thêm công việc</button>
+      </div>
+
+      {/* Stats mini */}
+      <div className="stats-grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 16 }}>
+        {[
+          { label: "Tổng", value: total, sub: "công việc" },
+          { label: "Hoàn thành", value: doneCount, sub: `${total ? Math.round(doneCount/total*100) : 0}%`, color: "#16a34a" },
+          { label: "Quá hạn", value: overdueCount, sub: "cần xử lý", color: overdueCount > 0 ? "#dc2626" : "#888" },
+          { label: "Tiến độ TB", value: avgProgress + "%", sub: "toàn bộ", color: "#2563eb" },
+        ].map(s => (
+          <div className="stat-card" key={s.label}>
+            <div className="stat-label">{s.label}</div>
+            <div className="stat-value" style={{ color: s.color || "#1a2540", fontSize: 20 }}>{s.value}</div>
+            <div className="stat-sub">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div className="filter-bar" style={{ marginBottom: 16 }}>
+        <input className="search-input" placeholder="🔍 Tìm công việc..." value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="form-control" style={{ width: "auto" }} value={filterPri} onChange={e => setFilterPri(e.target.value)}>
+          <option value="all">Tất cả ưu tiên</option>
+          {TASK_PRIORITIES.map(p => <option key={p} value={p}>{TASK_PRIORITY_LABELS[p]}</option>)}
+        </select>
+      </div>
+
+      {/* ── LIST: Hôm nay + Quá hạn + Sắp tới ── */}
+      {(todayTasks.length > 0 || overdueTasks.length > 0) && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          {overdueTasks.length > 0 && (
+            <>
+              <div className="card-header" style={{ background: "#fff5f5" }}>
+                <span style={{ fontWeight: 600, color: "#dc2626" }}>⚠️ Quá hạn ({overdueTasks.length})</span>
+              </div>
+              {overdueTasks.map(t => (
+                <div key={t.id} className="task-list-item">
+                  <div className={`task-checkbox ${t.status === "done" ? "checked" : ""}`}
+                    onClick={() => updateStatus(t.id, t.status === "done" ? "todo" : "done")}>
+                    {t.status === "done" && "✓"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, color: "#dc2626", textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.title}</div>
+                    <div style={{ fontSize: 11, color: "#dc2626", marginTop: 2 }}>Deadline: {t.dueDate}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div className="progress-bar" style={{ width: 80 }}>
+                      <div className="progress-fill" style={{ width: (t.progress||0)+"%", background: "#dc2626" }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: "#888", minWidth: 30 }}>{t.progress||0}%</span>
+                    <button onClick={() => { setEditTask(t); setShowForm(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#888" }}>✏️</button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+          {todayTasks.length > 0 && (
+            <>
+              <div className="card-header">
+                <span style={{ fontWeight: 600, color: "#1a2540" }}>📅 Hôm nay ({todayTasks.length})</span>
+              </div>
+              {todayTasks.map(t => (
+                <div key={t.id} className="task-list-item">
+                  <div className={`task-checkbox ${t.status === "done" ? "checked" : ""}`}
+                    onClick={() => updateStatus(t.id, t.status === "done" ? "todo" : "done")}>
+                    {t.status === "done" && "✓"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.title}</div>
+                    {t.description && <div style={{ fontSize: 11, color: "#888", marginTop: 1 }}>{t.description}</div>}
+                    {(() => { const q = t.quoteId && quotes.find(x => x.id === t.quoteId); return q ? <span className="task-tag linked" style={{ marginTop: 2, display: "inline-block" }}>🔗 {q.quoteNumber}</span> : null; })()}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input className="task-progress-input" type="number" min={0} max={100} value={t.progress||0}
+                      onChange={e => updateProgress(t.id, Number(e.target.value))} />
+                    <span style={{ fontSize: 11, color: "#888" }}>%</span>
+                    <button onClick={() => { setEditTask(t); setShowForm(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#888" }}>✏️</button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+          {upcomingTasks.length > 0 && (
+            <>
+              <div className="card-header">
+                <span style={{ fontWeight: 600, color: "#666" }}>🗓️ Sắp tới ({upcomingTasks.length})</span>
+              </div>
+              {upcomingTasks.slice(0,5).map(t => (
+                <div key={t.id} className="task-list-item">
+                  <div className={`task-checkbox ${t.status === "done" ? "checked" : ""}`}
+                    onClick={() => updateStatus(t.id, t.status === "done" ? "todo" : "done")}>
+                    {t.status === "done" && "✓"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>{t.title}</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>📅 {t.dueDate}</div>
+                  </div>
+                  <button onClick={() => { setEditTask(t); setShowForm(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#888" }}>✏️</button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {tasks.length === 0 && (
+        <div className="empty-state">
+          <div style={{ fontSize: 40 }}>📋</div>
+          <h3>Chưa có công việc nào</h3>
+          <p style={{ fontSize: 13 }}>Bấm "+ Thêm công việc" để bắt đầu</p>
+        </div>
+      )}
+
+      {/* ── KANBAN ── */}
+      {tasks.length > 0 && (
+        <div>
+          <div className="section-title" style={{ marginTop: 8 }}>🗂️ Bảng Kanban</div>
+          <div className="kanban-wrap">
+            {TASK_STATUSES.map(status => {
+              const col = filtered.filter(t => t.status === status);
+              return (
+                <div key={status} className="kanban-col"
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={() => handleDrop(status)}
+                  style={{ borderTop: `3px solid ${TASK_STATUS_COLORS[status]}` }}>
+                  <div className="kanban-col-header">
+                    <span style={{ color: TASK_STATUS_COLORS[status] }}>{TASK_STATUS_LABELS[status]}</span>
+                    <span className="kanban-col-count">{col.length}</span>
+                  </div>
+                  {col.length === 0 && (
+                    <div style={{ textAlign: "center", color: "#ccc", fontSize: 12, padding: "20px 0" }}>Thả công việc vào đây</div>
+                  )}
+                  {col.map(t => (
+                    <TaskCard key={t.id} task={t} quotes={quotes}
+                      onEdit={t => { setEditTask(t); setShowForm(true); }}
+                      onDelete={deleteTask}
+                      onProgressChange={updateProgress}
+                      onStatusChange={updateStatus}
+                      draggable
+                      onDragStart={() => setDragId(t.id)}
+                    />
+                  ))}
+                  {/* Nút thêm nhanh trong cột */}
+                  <button className="btn btn-ghost btn-sm" style={{ width: "100%", marginTop: 4, justifyContent: "center" }}
+                    onClick={() => { setEditTask({ id: genTaskId(), title: "", status, priority: "medium", progress: status === "done" ? 100 : 0, dueDate: todayISO(), createdAt: new Date().toISOString() }); setShowForm(true); }}>
+                    + Thêm
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Done section collapsed */}
+          {doneTasks.length > 0 && (
+            <details style={{ marginTop: 16 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "#888", padding: "8px 0", userSelect: "none" }}>
+                ✅ Đã hoàn thành ({doneTasks.length}) — click để xem
+              </summary>
+              <div className="card" style={{ marginTop: 8 }}>
+                {doneTasks.map(t => (
+                  <div key={t.id} className="task-list-item">
+                    <div className="task-checkbox checked" onClick={() => updateStatus(t.id, "todo")}>✓</div>
+                    <div style={{ flex: 1, color: "#aaa", textDecoration: "line-through", fontSize: 13 }}>{t.title}</div>
+                    <button onClick={() => deleteTask(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 13 }}>🗑️</button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {showForm && (
+        <TaskFormModal
+          task={editTask}
+          quotes={quotes}
+          onSave={saveTask}
+          onClose={() => { setShowForm(false); setEditTask(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
 function App() {
 
   const [quotes, setQuotes] = useState([]);
@@ -4137,6 +4580,10 @@ function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9S3 16.97 3 12 7.03 3 12 3s9 4.03 9 9z"/></svg>
             <span className="sidebar-label">Biên bản</span>
           </div>
+          <div className={`sidebar-item ${view==="tasks"?"active":""}`} onClick={()=>setView("tasks")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>
+            <span className="sidebar-label">Công việc</span>
+          </div>
 
           <div className="sidebar-section">Trạng thái</div>
           {Object.entries(STATUS_LABELS).map(([k,v])=>(
@@ -4218,6 +4665,10 @@ function App() {
                 </div>
               </div>
             </div>
+          )}
+
+          {view === "tasks" && (
+            <TasksView quotes={quotes} />
           )}
 
           {view === "handover" && (
