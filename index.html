@@ -372,7 +372,9 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbwqbaqdOFmDJYcbXZrFKsEx
 const LS_QUOTES    = "pmc_quotes_v4";
 const LS_PRODUCTS  = "pmc_products_v4";
 const LS_CUSTOMERS = "pmc_customers_v4";
-const LS_CONTRACTS = "pmc_contracts_v4";
+const LS_CONTRACTS  = "pmc_contracts_v4";
+const LS_HANDOVERS  = "pmc_handovers_v4";
+const LS_DELIVERIES = "pmc_deliveries_v4";
 const LS_TOKEN  = "pmc_session_token";  // session token từ GAS
 
 // ── In-memory store ───────────────────────────────────────────────────────────
@@ -380,7 +382,9 @@ const _mem = {
   quotes:    null,
   products:  [],
   customers: [],
-  contracts: {},
+  contracts:  {},
+  handovers:  {},
+  deliveries: {},
 };
 
 // ── Debounce save ─────────────────────────────────────────────────────────────
@@ -411,7 +415,9 @@ async function _flushToGAS() {
           quotes:    _mem.quotes    ?? [],
           products:  _mem.products,
           customers: _mem.customers,
-          contracts: _mem.contracts,
+          contracts:  _mem.contracts,
+          handovers:  _mem.handovers,
+          deliveries: _mem.deliveries,
         }
       }),
     });
@@ -441,7 +447,9 @@ function _flushToLocalStorage() {
     localStorage.setItem(LS_QUOTES,    JSON.stringify(_mem.quotes    ?? []));
     localStorage.setItem(LS_PRODUCTS,  JSON.stringify(_mem.products));
     localStorage.setItem(LS_CUSTOMERS, JSON.stringify(_mem.customers));
-    localStorage.setItem(LS_CONTRACTS, JSON.stringify(_mem.contracts));
+    localStorage.setItem(LS_CONTRACTS,  JSON.stringify(_mem.contracts));
+    localStorage.setItem(LS_HANDOVERS,  JSON.stringify(_mem.handovers));
+    localStorage.setItem(LS_DELIVERIES, JSON.stringify(_mem.deliveries));
   } catch(e) { console.warn("localStorage full:", e); }
 }
 
@@ -465,7 +473,9 @@ async function doLoad() {
         _mem.quotes    = Array.isArray(data.quotes)    ? data.quotes    : [];
         _mem.products  = Array.isArray(data.products)  ? data.products  : [];
         _mem.customers = Array.isArray(data.customers) ? data.customers : [];
-        _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
+        _mem.contracts  = (data.contracts  && typeof data.contracts  === "object") ? data.contracts  : {};
+        _mem.handovers  = (data.handovers   && typeof data.handovers   === "object") ? data.handovers  : {};
+        _mem.deliveries = (data.deliveries  && typeof data.deliveries  === "object") ? data.deliveries : {};
         // ── Nạp config từ server (không hardcode trong HTML) ──
         if (data.company)          Object.assign(COMPANY, data.company);
         if (data.contractDefaults) Object.assign(CONTRACT_DEFAULTS, data.contractDefaults);
@@ -492,7 +502,9 @@ function _initFromLocalStorage() {
   try { const q = localStorage.getItem(LS_QUOTES);    _mem.quotes    = q  ? JSON.parse(q)  : []; } catch { _mem.quotes = []; }
   try { const p = localStorage.getItem(LS_PRODUCTS);  _mem.products  = p  ? JSON.parse(p)  : []; } catch { _mem.products = []; }
   try { const c = localStorage.getItem(LS_CUSTOMERS); _mem.customers = c  ? JSON.parse(c)  : []; } catch { _mem.customers = []; }
-  try { const ct= localStorage.getItem(LS_CONTRACTS); _mem.contracts = ct ? JSON.parse(ct) : {}; } catch { _mem.contracts = {}; }
+  try { const ct= localStorage.getItem(LS_CONTRACTS);  _mem.contracts  = ct  ? JSON.parse(ct)  : {}; } catch { _mem.contracts  = {}; }
+  try { const hw= localStorage.getItem(LS_HANDOVERS);   _mem.handovers  = hw  ? JSON.parse(hw)  : {}; } catch { _mem.handovers  = {}; }
+  try { const dv= localStorage.getItem(LS_DELIVERIES);  _mem.deliveries = dv  ? JSON.parse(dv)  : {}; } catch { _mem.deliveries = {}; }
 }
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
@@ -552,6 +564,22 @@ function saveContract(quoteId, contractData) {
   return Promise.resolve();
 }
 
+// ── Handovers ─────────────────────────────────────────────────────────────────
+function loadHandover(id) { return Promise.resolve(_mem.handovers[id] || null); }
+function saveHandover(id, data) {
+  _mem.handovers[id] = { ...data, id };
+  _scheduleSave();
+  return Promise.resolve();
+}
+
+// ── Deliveries ────────────────────────────────────────────────────────────────
+function loadDelivery(id) { return Promise.resolve(_mem.deliveries[id] || null); }
+function saveDelivery(id, data) {
+  _mem.deliveries[id] = { ...data, id };
+  _scheduleSave();
+  return Promise.resolve();
+}
+
 // ── Migration từ key cũ ───────────────────────────────────────────────────────
 async function migrateFromLocalStorage() {
   if (localStorage.getItem(LS_QUOTES) !== null) return;
@@ -564,7 +592,7 @@ async function migrateFromLocalStorage() {
 // ── Xuất / Nhập JSON ─────────────────────────────────────────────────────────
 function exportToJSON() {
   _flushToLocalStorage();
-  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, exportedAt: new Date().toISOString() };
+  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, handovers: _mem.handovers, deliveries: _mem.deliveries, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -584,7 +612,9 @@ function importFromJSON(onDone) {
       _mem.quotes    = data.quotes;
       _mem.products  = Array.isArray(data.products)  ? data.products  : [];
       _mem.customers = Array.isArray(data.customers) ? data.customers : [];
-      _mem.contracts = (data.contracts && typeof data.contracts === "object") ? data.contracts : {};
+      _mem.contracts  = (data.contracts  && typeof data.contracts  === "object") ? data.contracts  : {};
+      _mem.handovers  = (data.handovers   && typeof data.handovers   === "object") ? data.handovers  : {};
+      _mem.deliveries = (data.deliveries  && typeof data.deliveries  === "object") ? data.deliveries : {};
       await _flushToGAS();
       showToast(`✅ Đã nhập ${data.quotes.length} báo giá từ ${file.name}`);
       if (typeof onDone === "function") onDone(_mem.quotes);
@@ -1934,6 +1964,11 @@ function HandoverModal({ quote, onClose }) {
   const [dateStr, setDateStr] = React.useState(todayFull);
   const [refNum, setRefNum] = React.useState(quote ? ("BBBG-" + (quote.quoteNumber || generateId().slice(0,6).toUpperCase())) : "");
   const [pdfLoading, setPdfLoading] = React.useState(false);
+  const [saving, setSaving]         = React.useState(false);
+  const [saveMsg, setSaveMsg]       = React.useState("");
+
+  // Key lưu: nếu có quote thì dùng id báo giá, nếu tạo mới độc lập thì dùng refNum
+  const storageId = quote ? ("hw_" + quote.id) : null;
 
   // Use quote items if quote provided, else allow custom items
   const [items, setItems] = React.useState(() => {
@@ -1944,6 +1979,33 @@ function HandoverModal({ quote, onClose }) {
   const addItem = () => setItems(prev => [...prev, { id: generateId(), name: "", qty: 1, unit: "Cái" }]);
   const removeItem = (id) => setItems(prev => prev.filter(it => it.id !== id));
   const setItemField = (id, field, val) => setItems(prev => prev.map(it => it.id === id ? { ...it, [field]: val } : it));
+
+  // Load biên bản đã lưu trước (nếu có)
+  React.useEffect(() => {
+    if (!storageId) return;
+    loadHandover(storageId).then(saved => {
+      if (!saved) return;
+      if (saved.receiverName)    setReceiverName(saved.receiverName);
+      if (saved.receiverCompany) setReceiverCompany(saved.receiverCompany);
+      if (saved.receiverTitle)   setReceiverTitle(saved.receiverTitle);
+      if (saved.delivererName)   setDelivererName(saved.delivererName);
+      if (saved.workContent)     setWorkContent(saved.workContent);
+      if (saved.evaluation)      setEvaluation(saved.evaluation);
+      if (saved.dateStr)         setDateStr(saved.dateStr);
+      if (saved.refNum)          setRefNum(saved.refNum);
+      if (saved.items && saved.items.length) setItems(saved.items);
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    if (!storageId) { showToast("⚠️ Cần gắn biên bản vào một báo giá để lưu", 2500); return; }
+    setSaving(true);
+    try {
+      await saveHandover(storageId, { receiverName, receiverCompany, receiverTitle, delivererName, workContent, evaluation, dateStr, refNum, items });
+      setSaveMsg("✓ Đã lưu");
+      setTimeout(() => setSaveMsg(""), 2000);
+    } finally { setSaving(false); }
+  };
 
   const handlePrint = () => {
     const el = document.getElementById("handoverPreviewContent");
@@ -2220,6 +2282,11 @@ function HandoverModal({ quote, onClose }) {
 
         <div className="modal-footer no-print">
           <button className="btn btn-ghost" onClick={onClose}>Đóng</button>
+          {storageId && (
+            <button className="btn btn-ghost" onClick={handleSave} disabled={saving}>
+              {saving ? "⏳ Đang lưu..." : "💾 Lưu biên bản"}{saveMsg && <span style={{color:"#16a34a",marginLeft:6}}>{saveMsg}</span>}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={handlePDFClick} disabled={pdfLoading} style={{ minWidth: 110 }}>
             {pdfLoading ? "⏳ Đang tạo..." : "📄 Xuất PDF"}
           </button>
@@ -2246,6 +2313,38 @@ function DeliveryModal({ quote, onClose }) {
   const [deliveryAddress,setDeliveryAddress]=React.useState(quote?.address || "");
   const [note,          setNote]          = React.useState("");
   const [pdfLoading,    setPdfLoading]    = React.useState(false);
+  const [saving,        setSaving]        = React.useState(false);
+  const [saveMsg,       setSaveMsg]       = React.useState("");
+
+  const storageId = quote ? ("dv_" + quote.id) : null;
+
+  // Load phiếu đã lưu trước (nếu có)
+  React.useEffect(() => {
+    if (!storageId) return;
+    loadDelivery(storageId).then(saved => {
+      if (!saved) return;
+      if (saved.refNum)          setRefNum(saved.refNum);
+      if (saved.dateStr)         setDateStr(saved.dateStr);
+      if (saved.delivererName)   setDelivererName(saved.delivererName);
+      if (saved.delivererPhone)  setDelivererPhone(saved.delivererPhone);
+      if (saved.receiverName)    setReceiverName(saved.receiverName);
+      if (saved.receiverPhone)   setReceiverPhone(saved.receiverPhone);
+      if (saved.receiverCompany) setReceiverCompany(saved.receiverCompany);
+      if (saved.deliveryAddress) setDeliveryAddress(saved.deliveryAddress);
+      if (saved.note)            setNote(saved.note);
+      if (saved.items && saved.items.length) setItems(saved.items);
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    if (!storageId) { showToast("⚠️ Cần gắn phiếu vào một báo giá để lưu", 2500); return; }
+    setSaving(true);
+    try {
+      await saveDelivery(storageId, { refNum, dateStr, delivererName, delivererPhone, receiverName, receiverPhone, receiverCompany, deliveryAddress, note, items });
+      setSaveMsg("✓ Đã lưu");
+      setTimeout(() => setSaveMsg(""), 2000);
+    } finally { setSaving(false); }
+  };
 
   // Bảng hàng hóa – lấy từ báo giá nếu có, thêm cột serial
   const [items, setItems] = React.useState(() => {
@@ -2559,6 +2658,11 @@ function DeliveryModal({ quote, onClose }) {
 
         <div className="modal-footer no-print">
           <button className="btn btn-ghost" onClick={onClose}>Đóng</button>
+          {storageId && (
+            <button className="btn btn-ghost" onClick={handleSave} disabled={saving}>
+              {saving ? "⏳ Đang lưu..." : "💾 Lưu phiếu"}{saveMsg && <span style={{color:"#16a34a",marginLeft:6}}>{saveMsg}</span>}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={handlePDFClick} disabled={pdfLoading} style={{ minWidth:110 }}>
             {pdfLoading ? "⏳ Đang tạo..." : "📄 Xuất PDF"}
           </button>
