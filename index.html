@@ -422,6 +422,24 @@
   .task-checkbox.checked { background:#1a2540; border-color:#1a2540; color:#fff; }
   .task-progress-input { width:48px; height:22px; font-size:12px; text-align:center; border:1px solid #d1cfc6; border-radius:4px; padding:0 4px; }
 
+  /* ── Notes (ghi chú nội bộ) ────────────────────────────────────────────── */
+  .note-card { background:#fff; border:1px solid #e5e3dc; border-radius:8px; padding:14px 16px; margin-bottom:10px; position:relative; transition:box-shadow 0.15s; }
+  .note-card:hover { box-shadow:0 2px 10px rgba(0,0,0,0.07); }
+  .note-card.pinned { border-left:3px solid #f59e0b; }
+  .note-title { font-weight:600; font-size:14px; color:#1a2540; margin-bottom:5px; }
+  .note-body { font-size:13px; color:#444; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
+  .note-meta { font-size:11px; color:#aaa; margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .note-tag-list { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
+  .note-tag { background:#eef0f8; color:#1a2540; padding:2px 8px; border-radius:10px; font-size:11px; cursor:pointer; }
+  .note-tag:hover { background:#d9dff5; }
+  .note-tag.active { background:#1a2540; color:#fff; }
+  .note-actions { position:absolute; top:10px; right:10px; display:flex; gap:4px; opacity:0; transition:opacity 0.15s; }
+  .note-card:hover .note-actions { opacity:1; }
+  .note-pin-btn { font-size:14px; background:none; border:none; cursor:pointer; padding:3px 5px; border-radius:4px; }
+  .note-pin-btn:hover { background:#f5f4f0; }
+  .notes-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  @media (max-width:768px) { .notes-grid { grid-template-columns:1fr; } }
+
   </style>
 </head>
 <body>
@@ -603,6 +621,7 @@ const LS_CUSTOMERS = "pmc_customers_v4";
 const LS_CONTRACTS  = "pmc_contracts_v4";
 const LS_HANDOVERS  = "pmc_handovers_v4";
 const LS_TASKS      = "pmc_tasks_v4";
+const LS_NOTES      = "pmc_notes_v4";
 const LS_DELIVERIES = "pmc_deliveries_v4";
 const LS_TOKEN  = "pmc_session_token";  // session token từ GAS
 
@@ -615,6 +634,7 @@ const _mem = {
   handovers:  {},
   deliveries: {},
   tasks:      [],
+  notes:      [],
 };
 
 // ── Debounce save ─────────────────────────────────────────────────────────────
@@ -649,6 +669,7 @@ async function _flushToGAS() {
           handovers:  _mem.handovers,
           deliveries: _mem.deliveries,
           tasks:      _mem.tasks,
+          notes:      _mem.notes,
         }
       }),
     });
@@ -685,6 +706,7 @@ function _flushToLocalStorage() {
     localStorage.setItem(LS_HANDOVERS,  JSON.stringify(_mem.handovers));
     localStorage.setItem(LS_DELIVERIES, JSON.stringify(_mem.deliveries));
     localStorage.setItem(LS_TASKS,      JSON.stringify(_mem.tasks));
+    localStorage.setItem(LS_NOTES,      JSON.stringify(_mem.notes));
   } catch(e) { console.warn("localStorage full:", e); }
 }
 
@@ -712,7 +734,9 @@ async function doLoad() {
         _mem.handovers  = (data.handovers   && typeof data.handovers   === "object") ? data.handovers  : {};
         _mem.deliveries = (data.deliveries  && typeof data.deliveries  === "object") ? data.deliveries : {};
       _mem.tasks      = Array.isArray(data.tasks) ? data.tasks : [];
+      _mem.notes      = Array.isArray(data.notes) ? data.notes : [];
         _mem.tasks      = Array.isArray(data.tasks) ? data.tasks : [];
+        _mem.notes      = Array.isArray(data.notes) ? data.notes : [];
         // ── Nạp config từ server (không hardcode trong HTML) ──
         if (data.company)          Object.assign(COMPANY, data.company);
         if (data.contractDefaults) Object.assign(CONTRACT_DEFAULTS, data.contractDefaults);
@@ -748,6 +772,7 @@ function _initFromLocalStorage() {
   try { const hw= localStorage.getItem(LS_HANDOVERS);   _mem.handovers  = hw  ? JSON.parse(hw)  : {}; } catch { _mem.handovers  = {}; }
   try { const dv= localStorage.getItem(LS_DELIVERIES);  _mem.deliveries = dv  ? JSON.parse(dv)  : {}; } catch { _mem.deliveries = {}; }
   try { const tk= localStorage.getItem(LS_TASKS);        _mem.tasks      = tk  ? JSON.parse(tk)  : []; } catch { _mem.tasks      = []; }
+  try { const nt= localStorage.getItem(LS_NOTES);        _mem.notes      = nt  ? JSON.parse(nt)  : []; } catch { _mem.notes      = []; }
 }
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
@@ -827,6 +852,10 @@ function saveDelivery(id, data) {
 function loadTasks() { return Promise.resolve([...(_mem.tasks || [])]); }
 function saveTasks(tasks) { _mem.tasks = tasks; _scheduleSave(); return Promise.resolve(); }
 
+// ── Notes (ghi chú nội bộ) ────────────────────────────────────────────────────
+function loadNotes() { return Promise.resolve([...(_mem.notes || [])]); }
+function saveNotes(notes) { _mem.notes = notes; _scheduleSave(); return Promise.resolve(); }
+
 // ── Migration từ key cũ ───────────────────────────────────────────────────────
 async function migrateFromLocalStorage() {
   if (localStorage.getItem(LS_QUOTES) !== null) return;
@@ -839,7 +868,7 @@ async function migrateFromLocalStorage() {
 // ── Xuất / Nhập JSON ─────────────────────────────────────────────────────────
 function exportToJSON() {
   _flushToLocalStorage();
-  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, handovers: _mem.handovers, deliveries: _mem.deliveries, tasks: _mem.tasks, exportedAt: new Date().toISOString() };
+  const data = { quotes: _mem.quotes ?? [], products: _mem.products, customers: _mem.customers, contracts: _mem.contracts, handovers: _mem.handovers, deliveries: _mem.deliveries, tasks: _mem.tasks, notes: _mem.notes, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -3997,6 +4026,398 @@ const handlePDFClick = async () => {
 // Quản lý state toàn cục: quotes, modal đang mở, tìm kiếm, xác nhận xóa...
 // Render: Topbar → Sidebar → Content (Dashboard / Danh sách báo giá / Catalog)
 
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOTES – Ghi chú nội bộ (không xuất ra ngoài)
+// ═══════════════════════════════════════════════════════════════════════════════
+const NOTE_COLORS = [
+  "#fff9db","#d3f9d8","#d0ebff","#ffe8cc","#f8d7e3","#e9ecef","#fff0f6","#e8f5e9"
+];
+const NOTE_COLOR_NAMES = ["Vàng","Xanh lá","Xanh dương","Cam","Hồng","Xám","Tím","Lá"];
+
+function genNoteId() { return "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+// ── NoteFormModal ─────────────────────────────────────────────────────────────
+function NoteFormModal({ note, allTags, onSave, onClose }) {
+  const isNew = !note;
+  const [form, setForm] = React.useState(note ? { ...note } : {
+    id: genNoteId(), title: "", body: "", tags: [], color: NOTE_COLORS[0],
+    pinned: false, createdAt: new Date().toISOString(),
+  });
+  const [tagInput, setTagInput] = React.useState("");
+  const set = (f, v) => setForm(p => ({ ...p, [f]: v }));
+
+  const addTag = (tag) => {
+    tag = tag.trim();
+    if (!tag || form.tags.includes(tag)) return;
+    set("tags", [...form.tags, tag]);
+    setTagInput("");
+  };
+  const removeTag = (tag) => set("tags", form.tags.filter(t => t !== tag));
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth:560, height:"auto", maxHeight:"90vh" }}>
+        <div className="modal-header">
+          <span className="modal-title">{isNew ? "📝 Ghi chú mới" : "✏️ Sửa ghi chú"}</span>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{ display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Màu nền */}
+          <div className="form-group" style={{ marginBottom:0 }}>
+            <label>Màu nền</label>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:4 }}>
+              {NOTE_COLORS.map((col, i) => (
+                <button key={col} onClick={() => set("color", col)} title={NOTE_COLOR_NAMES[i]}
+                  style={{ width:28, height:28, borderRadius:"50%", background:col, border: form.color===col ? "2px solid #1a2540" : "1px solid #d1cfc6", cursor:"pointer" }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Tiêu đề</label>
+            <input className="form-control" value={form.title} onChange={e => set("title", e.target.value)}
+              placeholder="Tiêu đề ghi chú..." autoFocus />
+          </div>
+
+          <div className="form-group">
+            <label>Nội dung <span style={{fontSize:11,color:"#aaa",fontWeight:400}}>(chỉ dùng nội bộ, không xuất ra ngoài)</span></label>
+            <textarea className="form-control" rows={8} value={form.body} onChange={e => set("body", e.target.value)}
+              placeholder="Ghi chú bất kỳ thông tin nội bộ: giá vốn, ghi nhớ, thông tin đàm phán..." />
+          </div>
+
+          {/* Tags */}
+          <div className="form-group" style={{ marginBottom:0 }}>
+            <label>Nhãn (tags)</label>
+            <div style={{ display:"flex", gap:8, marginBottom:6, flexWrap:"wrap" }}>
+              {form.tags.map(tag => (
+                <span key={tag} style={{ background:"#1a2540", color:"#fff", padding:"2px 8px", borderRadius:10, fontSize:12, display:"flex", alignItems:"center", gap:4 }}>
+                  {tag}
+                  <button onClick={() => removeTag(tag)} style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", padding:0, fontSize:14, lineHeight:1 }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <input className="form-control" style={{ flex:1 }} value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); } }}
+                placeholder="Nhập tag rồi Enter... (VD: khách VIP, ưu tiên, nội bộ)" />
+              <button className="btn btn-ghost btn-sm" onClick={() => addTag(tagInput)}>+ Thêm</button>
+            </div>
+            {/* Gợi ý tag đang có */}
+            {allTags.filter(t => !form.tags.includes(t) && t.toLowerCase().includes(tagInput.toLowerCase()) && tagInput).length > 0 && (
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
+                {allTags.filter(t => !form.tags.includes(t) && t.toLowerCase().includes(tagInput.toLowerCase()) && tagInput).slice(0,8).map(t => (
+                  <span key={t} className="note-tag" onClick={() => addTag(t)}>{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Ghim */}
+          <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:13 }}>
+            <input type="checkbox" checked={form.pinned} onChange={e => set("pinned", e.target.checked)} />
+            📌 Ghim ghi chú này lên đầu
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Hủy</button>
+          <button className="btn btn-primary" onClick={() => {
+            if (!form.title.trim() && !form.body.trim()) { alert("Vui lòng nhập tiêu đề hoặc nội dung"); return; }
+            onSave({ ...form, updatedAt: new Date().toISOString() });
+          }}>💾 Lưu ghi chú</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NotesView ─────────────────────────────────────────────────────────────────
+function NotesView() {
+  const [notes, setNotes]       = React.useState([]);
+  const [loaded, setLoaded]     = React.useState(false);
+  const [editNote, setEditNote] = React.useState(null);
+  const [showForm, setShowForm] = React.useState(false);
+  const [search, setSearch]     = React.useState("");
+  const [activeTag, setActiveTag] = React.useState("all");
+  const [viewMode, setViewMode] = React.useState("grid"); // "grid" | "list"
+
+  React.useEffect(() => {
+    loadNotes().then(n => { setNotes(n || []); setLoaded(true); }).catch(() => setLoaded(true));
+  }, []);
+
+  const persist = (n) => { setNotes(n); saveNotes(n); };
+
+  const saveNote = (note) => {
+    const idx = notes.findIndex(n => n.id === note.id);
+    const updated = idx >= 0 ? notes.map(n => n.id === note.id ? note : n) : [note, ...notes];
+    persist(updated);
+    setShowForm(false); setEditNote(null);
+  };
+
+  const deleteNote = (id) => { if (window.confirm("Xóa ghi chú này?")) persist(notes.filter(n => n.id !== id)); };
+  const togglePin = (id) => persist(notes.map(n => n.id === id ? { ...n, pinned: !n.pinned } : n));
+
+  // Tất cả tags đang có
+  const allTags = [...new Set(notes.flatMap(n => n.tags || []))].sort();
+
+  const filtered = notes
+    .filter(n => {
+      const matchTag = activeTag === "all" || (n.tags || []).includes(activeTag);
+      const matchSearch = !search ||
+        (n.title || "").toLowerCase().includes(search.toLowerCase()) ||
+        (n.body  || "").toLowerCase().includes(search.toLowerCase()) ||
+        (n.tags  || []).some(t => t.toLowerCase().includes(search.toLowerCase()));
+      return matchTag && matchSearch;
+    })
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || "");
+    });
+
+  const fmtDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  };
+
+  if (!loaded) return <div className="empty-state"><div style={{fontSize:32}}>⏳</div><h3>Đang tải ghi chú...</h3></div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom:20, display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ fontSize:18, fontWeight:600, color:"#1a2540", marginBottom:4 }}>📝 Ghi chú nội bộ</h2>
+          <p style={{ color:"#888", fontSize:13 }}>{notes.length} ghi chú · Chỉ hiển thị nội bộ, không xuất ra báo giá/hợp đồng</p>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setViewMode(v => v==="grid"?"list":"grid")} title="Chuyển chế độ xem">
+            {viewMode==="grid" ? "☰ List" : "⊞ Grid"}
+          </button>
+          <button className="btn btn-primary" onClick={() => { setEditNote(null); setShowForm(true); }}>+ Ghi chú mới</button>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="filter-bar" style={{ marginBottom:14 }}>
+        <input className="search-input" placeholder="🔍 Tìm trong ghi chú..." value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {/* Tags filter */}
+      {allTags.length > 0 && (
+        <div className="note-tag-list" style={{ marginBottom:14 }}>
+          <span className={`note-tag ${activeTag==="all"?"active":""}`} onClick={() => setActiveTag("all")}>Tất cả</span>
+          {allTags.map(tag => (
+            <span key={tag} className={`note-tag ${activeTag===tag?"active":""}`} onClick={() => setActiveTag(t => t===tag?"all":tag)}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {notes.length === 0 ? (
+        <div className="empty-state">
+          <div style={{ fontSize:40 }}>📝</div>
+          <h3>Chưa có ghi chú nào</h3>
+          <p style={{ fontSize:13 }}>Dùng để lưu thông tin nội bộ: giá vốn, ghi nhớ quan trọng, thông tin đàm phán...</p>
+          <button className="btn btn-primary" style={{ marginTop:12 }} onClick={() => setShowForm(true)}>+ Tạo ghi chú đầu tiên</button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <div style={{ fontSize:32 }}>🔍</div>
+          <h3>Không tìm thấy ghi chú</h3>
+        </div>
+      ) : viewMode === "grid" ? (
+        <div className="notes-grid">
+          {filtered.map(note => (
+            <div key={note.id} className={`note-card ${note.pinned?"pinned":""}`} style={{ background: note.color || "#fff" }}>
+              <div className="note-actions">
+                <button className="note-pin-btn" onClick={() => togglePin(note.id)} title={note.pinned?"Bỏ ghim":"Ghim"}>
+                  {note.pinned ? "📌" : "📍"}
+                </button>
+                <button className="note-pin-btn" onClick={() => { setEditNote(note); setShowForm(true); }} title="Sửa">✏️</button>
+                <button className="note-pin-btn" onClick={() => deleteNote(note.id)} title="Xóa" style={{ color:"#dc2626" }}>🗑️</button>
+              </div>
+              {note.pinned && <div style={{ fontSize:11, color:"#f59e0b", fontWeight:600, marginBottom:4 }}>📌 Đã ghim</div>}
+              {note.title && <div className="note-title">{note.title}</div>}
+              {note.body && (
+                <div className="note-body" style={{ maxHeight:120, overflow:"hidden", maskImage:"linear-gradient(to bottom,black 70%,transparent 100%)", WebkitMaskImage:"linear-gradient(to bottom,black 70%,transparent 100%)" }}>
+                  {note.body}
+                </div>
+              )}
+              {(note.tags||[]).length > 0 && (
+                <div className="note-tag-list" style={{ marginTop:8 }}>
+                  {note.tags.map(t => <span key={t} className="note-tag" onClick={() => setActiveTag(t)}>{t}</span>)}
+                </div>
+              )}
+              <div className="note-meta">
+                <span>🕐 {fmtDate(note.updatedAt || note.createdAt)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* List mode */
+        <div className="card">
+          {filtered.map(note => (
+            <div key={note.id} style={{ padding:"12px 16px", borderBottom:"1px solid #f0ede6", display:"flex", gap:12, alignItems:"flex-start", background: note.color || "#fff" }}>
+              <div style={{ width:6, borderRadius:3, alignSelf:"stretch", background: note.pinned ? "#f59e0b" : "transparent", flexShrink:0 }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                  <div>
+                    {note.title && <div style={{ fontWeight:600, fontSize:14, color:"#1a2540" }}>{note.title}</div>}
+                    {note.body && <div style={{ fontSize:13, color:"#555", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:500 }}>{note.body.slice(0,120)}{note.body.length>120?"…":""}</div>}
+                  </div>
+                  <div style={{ display:"flex", gap:4, flexShrink:0, marginLeft:8 }}>
+                    <button onClick={() => togglePin(note.id)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:14 }}>{note.pinned?"📌":"📍"}</button>
+                    <button onClick={() => { setEditNote(note); setShowForm(true); }} style={{ background:"none", border:"none", cursor:"pointer", color:"#888", fontSize:14 }}>✏️</button>
+                    <button onClick={() => deleteNote(note.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626", fontSize:14 }}>🗑️</button>
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:6, marginTop:5, flexWrap:"wrap", alignItems:"center" }}>
+                  {(note.tags||[]).map(t => <span key={t} className="note-tag">{t}</span>)}
+                  <span style={{ fontSize:11, color:"#aaa" }}>🕐 {fmtDate(note.updatedAt||note.createdAt)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <NoteFormModal
+          note={editNote}
+          allTags={allTags}
+          onSave={saveNote}
+          onClose={() => { setShowForm(false); setEditNote(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONTRACTS VIEW – Danh sách hợp đồng đã soạn
+// ═══════════════════════════════════════════════════════════════════════════════
+function ContractsView({ quotes, onOpenContract }) {
+  const [contracts, setContracts] = React.useState({});
+  const [search, setSearch] = React.useState("");
+
+  React.useEffect(() => {
+    setContracts(_mem.contracts || {});
+    // Lắng nghe khi contracts thay đổi từ modal
+    const timer = setInterval(() => setContracts({...(_mem.contracts || {})}), 1500);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Gộp contract với thông tin báo giá tương ứng
+  const rows = Object.values(contracts)
+    .map(ct => {
+      const quote = quotes.find(q => q.id === ct.quoteId) || null;
+      return { ...ct, quote };
+    })
+    .filter(row => {
+      if (!search) return true;
+      const s = search.toLowerCase();
+      return (
+        (row.contractNumber || "").toLowerCase().includes(s) ||
+        (row.buyerName || "").toLowerCase().includes(s) ||
+        (row.quote?.quoteNumber || "").toLowerCase().includes(s)
+      );
+    })
+    .sort((a, b) => (b.contractNumber || "").localeCompare(a.contractNumber || ""));
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: "#1a2540", marginBottom: 4 }}>📃 Hợp đồng</h2>
+          <p style={{ color: "#888", fontSize: 13 }}>{rows.length} hợp đồng đã soạn</p>
+        </div>
+      </div>
+
+      <div className="filter-bar" style={{ marginBottom: 16 }}>
+        <input className="search-input" placeholder="🔍 Tìm số HĐ, khách hàng, số BG..." value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="empty-state">
+          <div style={{ fontSize: 40 }}>📃</div>
+          <h3>Chưa có hợp đồng nào</h3>
+          <p style={{ fontSize: 13 }}>Mở một báo giá → bấm "Soạn hợp đồng" → Lưu hợp đồng để thấy ở đây</p>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Số hợp đồng</th>
+                  <th>Khách hàng (Bên mua)</th>
+                  <th>Liên kết báo giá</th>
+                  <th>Ngôn ngữ</th>
+                  <th style={{ textAlign: "right" }}>Tổng giá trị</th>
+                  <th style={{ textAlign: "center" }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => {
+                  const total = row.quote ? calcItems(row.quote.items, row.quote.vatRate).total : 0;
+                  const col = getCustomerColor(row.buyerName || row.quote?.customer || "");
+                  return (
+                    <tr key={row.quoteId}>
+                      <td style={{ fontWeight: 600, color: "#1a2540" }}>
+                        {row.contractNumber || <span style={{ color: "#aaa", fontStyle: "italic" }}>Chưa đặt số</span>}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ background: col.bg, color: col.text, borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+                            {(row.buyerName || row.quote?.customer || "—").slice(0, 20)}{(row.buyerName || "").length > 20 ? "…" : ""}
+                          </span>
+                          <span style={{ fontSize: 12, color: "#555" }}>{row.buyerRep || ""}</span>
+                        </div>
+                      </td>
+                      <td>
+                        {row.quote ? (
+                          <span style={{ fontSize: 12, color: "#1a2540", fontWeight: 500 }}>
+                            📋 {row.quote.quoteNumber}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#aaa" }}>Báo giá đã xóa</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="badge" style={{ background: "#eef0f8", color: "#1a2540" }}>
+                          {row.lang === "vi_zh" ? "🇻🇳 VN – 🇨🇳 CN" : "🇻🇳 VN – 🇬🇧 EN"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 500 }}>
+                        {total > 0 ? fmt(total) + " đ" : <span style={{ color: "#aaa" }}>—</span>}
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <button className="btn btn-primary btn-sm"
+                          onClick={() => row.quote && onOpenContract(row.quote)}
+                          disabled={!row.quote}
+                          title={row.quote ? "Mở hợp đồng" : "Báo giá đã bị xóa"}>
+                          📝 Mở
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TASKS – Quản lý công việc hằng ngày kèm tiến độ
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4580,9 +5001,18 @@ function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9S3 16.97 3 12 7.03 3 12 3s9 4.03 9 9z"/></svg>
             <span className="sidebar-label">Biên bản</span>
           </div>
+          <div className={`sidebar-item ${view==="contracts"?"active":""}`} onClick={()=>setView("contracts")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span className="sidebar-label">Hợp đồng</span>
+            <span className="sidebar-badge">{Object.keys(_mem.contracts||{}).length}</span>
+          </div>
           <div className={`sidebar-item ${view==="tasks"?"active":""}`} onClick={()=>setView("tasks")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>
             <span className="sidebar-label">Công việc</span>
+          </div>
+          <div className={`sidebar-item ${view==="notes"?"active":""}`} onClick={()=>setView("notes")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span className="sidebar-label">Ghi chú</span>
           </div>
 
           <div className="sidebar-section">Trạng thái</div>
@@ -4669,6 +5099,14 @@ function App() {
 
           {view === "tasks" && (
             <TasksView quotes={quotes} />
+          )}
+
+          {view === "notes" && (
+            <NotesView />
+          )}
+
+          {view === "contracts" && (
+            <ContractsView quotes={quotes} onOpenContract={(q) => setContractQuote(q)} />
           )}
 
           {view === "handover" && (
