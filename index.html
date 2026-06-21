@@ -646,6 +646,14 @@ function _scheduleSave() {
   _saveTimer = setTimeout(_flushToGAS, SAVE_DELAY);
 }
 
+// Flush ngay khi đóng tab/trình duyệt (dùng sendBeacon để không bị cancel)
+window.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && _saveTimer) {
+    clearTimeout(_saveTimer);
+    _flushToGAS(); // best-effort, không await được ở đây
+  }
+});
+
 // ── Ghi lên Google Sheets (qua GAS) ──────────────────────────────────────────
 async function _flushToGAS() {
   if (!GAS_URL || GAS_URL === "PASTE_GAS_URL_HERE") {
@@ -935,6 +943,9 @@ async function doLogin(password) {
 
 // Đăng xuất: hủy token trên GAS và xóa local
 async function logout() {
+  // Flush data ngay lập tức trước khi logout — tránh mất tasks/notes/ghi chú chưa kịp lưu
+  clearTimeout(_saveTimer);          // hủy debounce timer đang chờ
+  try { await _flushToGAS(); } catch {} // lưu ngay, bỏ qua lỗi nếu có
   const token = localStorage.getItem(LS_TOKEN);
   localStorage.removeItem(LS_TOKEN);
   if (token && GAS_URL && GAS_URL !== "PASTE_GAS_URL_HERE") {
@@ -5091,7 +5102,7 @@ function App() {
                               {(() => {
                                 const col = getCustomerColor(q.customer);
                                 return (
-                                  <span style={{background:col.bg,color:col.text,borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:600}}>
+                                  <span style={{background:col.bg,color:col.text,borderRadius:5,padding:"3px 9px",fontSize:13,fontWeight:600}}>
                                     {q.customer}
                                   </span>
                                 );
@@ -5226,25 +5237,20 @@ function App() {
                                 {(() => {
                                   const col = getCustomerColor(q.customer);
                                   return (
-                                    <div style={{display:"flex",alignItems:"flex-start",gap:7}}>
-                                      <span style={{
-                                        display:"inline-block", flexShrink:0, marginTop:2,
+                                    <div>
+                                      <div style={{
+                                        display:"inline-block",
                                         background:col.bg, color:col.text,
-                                        borderRadius:4, padding:"2px 7px",
-                                        fontSize:11, fontWeight:600, whiteSpace:"nowrap",
-                                        maxWidth:120, overflow:"hidden", textOverflow:"ellipsis"
-                                      }} title={q.customer}>
-                                        {q.customer.length > 16 ? q.customer.slice(0,14)+"…" : q.customer}
-                                      </span>
-                                      <div>
-                                        <div style={{fontWeight:500}}>{q.customer}</div>
-                                        {q.contact&&<div style={{fontSize:11,color:"#aaa"}}>{q.contact}</div>}
-                                        {matchedItems.length>0&&(
-                                          <div style={{fontSize:10,color:"#1a2540",background:"#eef0f8",padding:"2px 5px",borderRadius:3,marginTop:3,display:"inline-block"}}>
-                                            📦 {matchedItems.map(i=>i.name).join(", ").substring(0,60)}
-                                          </div>
-                                        )}
-                                      </div>
+                                        borderRadius:5, padding:"3px 9px",
+                                        fontSize:13, fontWeight:600,
+                                        marginBottom: q.contact||matchedItems.length>0 ? 3 : 0,
+                                      }}>{q.customer}</div>
+                                      {q.contact&&<div style={{fontSize:11,color:"#aaa"}}>{q.contact}</div>}
+                                      {matchedItems.length>0&&(
+                                        <div style={{fontSize:10,color:"#1a2540",background:"#eef0f8",padding:"2px 5px",borderRadius:3,marginTop:3,display:"inline-block"}}>
+                                          📦 {matchedItems.map(i=>i.name).join(", ").substring(0,60)}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()}
