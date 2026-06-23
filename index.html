@@ -957,6 +957,14 @@ function setSessionToken(token) {
   localStorage.setItem(LS_TOKEN, token);
 }
 
+// Gọi khi app khởi động — chỉ lấy company info, không cần auth
+async function preloadCompanyInfo() {
+  try {
+    const cached = localStorage.getItem("pmc_company_cache");
+    if (cached) Object.assign(COMPANY, JSON.parse(cached));
+  } catch {}
+}
+	
 // Đăng nhập: gửi mật khẩu lên GAS, nhận token về
 async function doLogin(password) {
   if (!hasGasUrl()) throw new Error("Chưa cấu hình GAS_URL");
@@ -1404,6 +1412,12 @@ function ItemRow({ it, idx, allQuotes, vatRate, onSetItem, onSetItemFields, onRe
       await migrateFromLocalStorage();
       const data = await doLoad(); // load GAS ở background
       setQuotes(data ?? []);
+		// Cache company info để hiện logo ở màn login lần sau
+	if (COMPANY.logo || COMPANY.name) {
+	  try {
+	    localStorage.setItem("pmc_company_cache", JSON.stringify(COMPANY));
+	  } catch {}
+	}
       if (_mem.products.length === 0 && data && data.length) {
         await upsertCatalogItems(data.flatMap(q => q.items || []));
       }
@@ -5518,7 +5532,14 @@ function App() {
   const [itemSearch, setItemSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-
+	
+	// Load company info (logo, tên) từ cache ngay khi app mở
+	useEffect(() => {
+	  try {
+	    const cached = localStorage.getItem("pmc_company_cache");
+	    if (cached) Object.assign(COMPANY, JSON.parse(cached));
+	  } catch {}
+	}, []);
   // Lắng nghe GAS Unauthorized event → chuyển về màn đăng nhập ngay
   useEffect(() => {
     const handler = () => setAuthed(false);
