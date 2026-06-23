@@ -1579,6 +1579,8 @@ function QuoteModal({ quote, allQuotes, onSave, onClose }) {
   const [showCustSearch, setShowCustSearch] = useState(false);
   const [custSearchResults, setCustSearchResults] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [showXmlImport, setShowXmlImport] = useState(false);
+
 
   useEffect(() => {
     loadCustomerCatalog().then(setCustCatalog).catch(()=>{});
