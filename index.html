@@ -879,11 +879,19 @@ function saveDelivery(id, data) {
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 function loadTasks() { return Promise.resolve([...(_mem.tasks || [])]); }
-function saveTasks(tasks) { _mem.tasks = tasks; _scheduleSave(); return Promise.resolve(); }
+function saveTasks(tasks) {
+  _mem.tasks = tasks;
+  _flushToGAS();          // flush ngay, không debounce
+  return Promise.resolve();
+}
 
 // ── Notes (ghi chú nội bộ) ────────────────────────────────────────────────────
 function loadNotes() { return Promise.resolve([...(_mem.notes || [])]); }
-function saveNotes(notes) { _mem.notes = notes; _scheduleSave(); return Promise.resolve(); }
+function saveNotes(notes) {
+  _mem.notes = notes;
+  _flushToGAS();
+  return Promise.resolve();
+}
 
 // ── Migration từ key cũ ───────────────────────────────────────────────────────
 async function migrateFromLocalStorage() {
